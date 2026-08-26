@@ -37,3 +37,19 @@ def staff_only():
         return True
 
     return app_commands.check(predicate)
+
+
+def admin_only():
+    """Lebih ketat dari staff_only() -- cuma nerima Discord Administrator
+    permission asli, GAK nerima role staff yang diatur lewat /settings.
+    Dipake khusus buat aksi yang beneran berbahaya kayak /backup import
+    (nimpa SELURUH data bot -- kategori, produk, order, review, semuanya)."""
+
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if not isinstance(interaction.user, discord.Member) or not interaction.user.guild_permissions.administrator:
+            raise app_commands.CheckFailure(
+                "Command ini cuma bisa dipake sama Administrator server, bukan staff biasa."
+            )
+        return True
+
+    return app_commands.check(predicate)
