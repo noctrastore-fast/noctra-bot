@@ -213,6 +213,25 @@ def purchase_announcement_embed(
     return embed
 
 
+# -- Iklan ---------------------------------------------------------------------
+
+def advertisement_embed(
+    title: str,
+    description: str,
+    color: int = COLOR_ACCENT,
+) -> discord.Embed:
+    """Embed buat command `/iklan`. Sengaja tetep pake Embed klasik (bukan
+    Components V2) -- lebih gampang di-review sebelum posting (preview
+    langsung di respon ephemeral) dan cukup buat kebutuhan iklan: title,
+    deskripsi, banner gede, thumbnail kecil, warna aksen custom.
+
+    Gambar/thumbnail SENGAJA gak diisi di sini -- caller (bot.cogs.advertisement)
+    yang nempelin lewat `embed.set_image()`/`embed.set_thumbnail()`, soalnya
+    bisa dari upload attachment (`attachment://...`) atau URL langsung, dan
+    builder ini gak perlu tau bedanya."""
+    return base_embed(title, description, color=color)
+
+
 def ticket_welcome_embed(order_summary_text: str | None = None) -> discord.Embed:
     description = (
         "Makasih udah buka ticket. Staff kita bakal bantuin kamu sebentar lagi.\n\n"
