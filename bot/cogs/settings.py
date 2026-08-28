@@ -87,6 +87,22 @@ class SettingsCog(commands.Cog):
         )
 
     @settings_group.command(
+        name="ad_channel",
+        description="Atur channel default buat /iklan kalau parameter channel-nya gak diisi.",
+    )
+    @app_commands.describe(channel="Channel default buat posting iklan")
+    @staff_only()
+    async def ad_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
+        await settings_q.set_setting(self.bot.db, "ad_channel_id", str(channel.id))
+        await interaction.response.send_message(
+            embed=embeds.success_embed(
+                f"Channel default iklan diatur ke {channel.mention}. "
+                "Pake `/iklan` kapan aja -- kalau parameter `channel`-nya gak diisi, otomatis kesitu."
+            ),
+            ephemeral=True,
+        )
+
+    @settings_group.command(
         name="main_server_invite",
         description="Atur link invite server utama -- muncul jadi tombol 'Gabung Server' abis customer selesai review.",
     )
@@ -230,6 +246,7 @@ class SettingsCog(commands.Cog):
             "order_log_channel_id": await runtime.order_log_channel_id(),
             "reviews_channel_id": await runtime.reviews_channel_id(),
             "purchase_feed_channel_id": await runtime.purchase_feed_channel_id(),
+            "ad_channel_id": await runtime.ad_channel_id(),
             "main_server_invite_url": await runtime.main_server_invite_url(),
             "review_banner_url": await runtime.review_banner_url(),
             "leaderboard_channel_id": await runtime.leaderboard_channel_id(),
