@@ -92,6 +92,14 @@ class RuntimeSettings:
         value = await self._get("purchase_feed_channel_id", None)
         return int(value) if value else None
 
+    async def ad_channel_id(self) -> int | None:
+        """Channel default buat /iklan kalau parameter channel-nya gak
+        diisi -- diatur lewat /settings ad_channel. Staff tetep bisa
+        override channel tujuan tiap kali posting iklan lewat parameter
+        `channel` di command itu sendiri."""
+        value = await self._get("ad_channel_id", None)
+        return int(value) if value else None
+
     async def main_server_invite_url(self) -> str | None:
         """Link invite server utama, ditampilin sebagai tombol "Join
         Server" abis customer selesai kasih review -- diatur lewat
