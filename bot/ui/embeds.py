@@ -352,6 +352,27 @@ def settings_embed(values: dict) -> discord.Embed:
     return embed
 
 
+def store_status_embed(
+    state: str,
+    emoji_open: str,
+    emoji_closed: str,
+    note: str | None = None,
+) -> discord.Embed:
+    """Embed publik yang nunjukin toko lagi buka/tutup -- dipake bot.cogs.store_status,
+    diedit-in-place tiap kali staff toggle (bukan pesan baru tiap kali) biar
+    channel-nya gak kebanjiran pesan lama."""
+    is_open = state == "open"
+    emoji = emoji_open if is_open else emoji_closed
+    label = "SEDANG BUKA" if is_open else "SEDANG TUTUP"
+    color = COLOR_SUCCESS if is_open else COLOR_DANGER
+    description = f"# {emoji} {label}"
+    if note:
+        description += f"\n\n{note}"
+    embed = base_embed("Status Toko", description, color=color)
+    embed.timestamp = datetime.utcnow()
+    return embed
+
+
 def payment_list_embed(payments: list) -> discord.Embed:
     embed = base_embed("NOCTRA -- Metode Pembayaran", color=COLOR_PRIMARY)
     if not payments:
