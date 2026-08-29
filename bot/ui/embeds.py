@@ -357,6 +357,7 @@ def store_status_embed(
     emoji_open: str,
     emoji_closed: str,
     note: str | None = None,
+    thumbnail_url: str | None = None,
 ) -> discord.Embed:
     """Embed publik yang nunjukin toko lagi buka/tutup -- dipake bot.cogs.store_status,
     diedit-in-place tiap kali staff toggle (bukan pesan baru tiap kali) biar
@@ -368,7 +369,7 @@ def store_status_embed(
     description = f"# {emoji} {label}"
     if note:
         description += f"\n\n{note}"
-    embed = base_embed("Status Toko", description, color=color)
+    embed = base_embed("Status Toko", description, color=color, thumbnail_url=thumbnail_url)
     embed.timestamp = datetime.utcnow()
     return embed
 
