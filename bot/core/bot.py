@@ -28,6 +28,7 @@ EXTENSIONS = (
     "bot.cogs.panel",
     "bot.cogs.announcement",
     "bot.cogs.advertisement",
+    "bot.cogs.welcome",
     "bot.cogs.backup",
 )
 
