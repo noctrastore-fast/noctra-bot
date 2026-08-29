@@ -251,3 +251,11 @@ class RuntimeSettings:
         /storestatus emoji, default emoji bulet merah bawaan Discord."""
         value = await self._get("store_status_emoji_closed", "\U0001F534")
         return str(value)
+
+    async def store_status_thumbnail_url(self) -> str | None:
+        """URL gambar thumbnail kecil di pojok kanan atas embed status toko --
+        diatur lewat /storestatus thumbnail. HARUS URL yang udah di-hosting
+        (bukan upload attachment), soalnya pesan ini diedit berkali-kali tiap
+        staff toggle, sama alasannya kayak welcome_banner_url."""
+        value = await self._get("store_status_thumbnail_url", None)
+        return value or None
