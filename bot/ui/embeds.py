@@ -233,6 +233,9 @@ def advertisement_embed(
 
 
 # -- Sambutan Member Baru --------------------------------------------------------
+# welcome_embed() di bawah ini UDAH GAK DIPAKE lagi -- /welcome sekarang dirender
+# pake Components V2, lihat bot.ui.components.welcome_container(). Ditinggalin
+# di sini (bukan dihapus) buat jaga-jaga ada kode lain yang masih manggil.
 
 def welcome_embed(
     member: discord.Member,
