@@ -43,6 +43,15 @@ DEFAULT_DESCRIPTION = (
 )
 DEFAULT_FOOTER_TEXT = "{server}"
 
+# Placeholder khusus buat modal -- BEDA dari DEFAULT_DESCRIPTION di atas.
+# Discord ngebatasin field `placeholder` di TextInput modal maksimal 100
+# karakter (beda sama `max_length` value yang boleh sampe 4000), sementara
+# DEFAULT_DESCRIPTION sendiri sengaja panjang karena dipake juga sebagai
+# fallback isi pesan sambutan beneran (bukan cuma buat placeholder) di
+# _build_embed_for(). Makanya dipisah biar DEFAULT_DESCRIPTION gak perlu
+# dipendekin cuma buat nyesuain limit placeholder.
+DESCRIPTION_PLACEHOLDER = "Halo {mention}, seneng banget kamu gabung ke {server}! (dukung {membercount}, {date}, dst.)"
+
 TITLE_MAX_LENGTH = 256
 DESCRIPTION_MAX_LENGTH = 4000
 FOOTER_MAX_LENGTH = 2048
@@ -99,7 +108,7 @@ class WelcomeMessageModal(discord.ui.Modal, title="Atur Pesan Sambutan"):
             style=discord.TextStyle.paragraph,
             required=False,
             max_length=DESCRIPTION_MAX_LENGTH,
-            placeholder=DEFAULT_DESCRIPTION,
+            placeholder=DESCRIPTION_PLACEHOLDER,
             default=current.get("description") or "",
         )
         self.banner_input = discord.ui.TextInput(
