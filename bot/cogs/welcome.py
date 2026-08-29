@@ -2,11 +2,17 @@
 Command staff: /welcome dan /joinrole.
 
 /welcome -- pesan sambutan otomatis pas ada member baru gabung ke server.
-Embed-nya: thumbnail avatar member (otomatis, gak perlu diatur), banner
-full-width opsional, title + deskripsi custom (dukung placeholder kayak
-{mention}/{server}/{membercount}/{date} dan emoji custom server -- tinggal
-ketik langsung, gak butuh setup apapun), footer + icon footer custom, dan
-field "Bergabung" yang nunjukin tanggal & jam join persis.
+Dirender pake Components V2 (bukan embed klasik): thumbnail avatar member
+(otomatis, gak perlu diatur), garis Separator di antara tiap bagian
+(judul+deskripsi / tanggal gabung / banner / footer), title + deskripsi
+custom (dukung placeholder kayak {mention}/{server}/{membercount}/{date}
+dan emoji custom server -- tinggal ketik langsung, gak butuh setup
+apapun), footer + icon footer custom.
+
+Soal {mention}: beda sama embed klasik yang gak pernah ping, di Components
+V2 placeholder ini BENERAN ngirim notifikasi ke member yang gabung kalau
+dipake di title/description -- nyala/matinya diatur lewat /welcome mention
+(lihat _send_welcome, dikontrol pake parameter allowed_mentions).
 
 /joinrole -- auto-assign role pas ada yang gabung, bisa diatur beda buat
 member biasa vs bot (misal bot yang ditambahin ke server otomatis dikasih
@@ -30,7 +36,7 @@ from discord.ext import commands
 from bot.core.logger import logger
 from bot.core.theme import COLOR_ACCENT
 from bot.database.queries import settings as settings_q
-from bot.ui import embeds
+from bot.ui import components, embeds
 from bot.utils.helpers import RuntimeSettings
 from bot.utils.permissions import staff_only
 from bot.utils.validators import parse_hex_color
@@ -48,7 +54,7 @@ DEFAULT_FOOTER_TEXT = "{server}"
 # karakter (beda sama `max_length` value yang boleh sampe 4000), sementara
 # DEFAULT_DESCRIPTION sendiri sengaja panjang karena dipake juga sebagai
 # fallback isi pesan sambutan beneran (bukan cuma buat placeholder) di
-# _build_embed_for(). Makanya dipisah biar DEFAULT_DESCRIPTION gak perlu
+# _build_container_for(). Makanya dipisah biar DEFAULT_DESCRIPTION gak perlu
 # dipendekin cuma buat nyesuain limit placeholder.
 DESCRIPTION_PLACEHOLDER = "Halo {mention}, seneng banget kamu gabung ke {server}! (dukung {membercount}, {date}, dst.)"
 
@@ -203,7 +209,7 @@ class WelcomeCog(commands.Cog):
             return
         await self._send_welcome(member, channel)
 
-    async def _build_embed_for(self, member: discord.Member) -> discord.Embed:
+    async def _build_container_for(self, member: discord.Member) -> discord.ui.Container:
         runtime = RuntimeSettings(self.bot.db)
         title_template = await runtime.welcome_title() or DEFAULT_TITLE
         description_template = await runtime.welcome_description() or DEFAULT_DESCRIPTION
@@ -214,7 +220,7 @@ class WelcomeCog(commands.Cog):
             footer_icon_url = member.guild.icon.url
         color = await runtime.welcome_color()
 
-        return embeds.welcome_embed(
+        return components.welcome_container(
             member,
             title=_render_template(title_template, member)[:TITLE_MAX_LENGTH] or "\u200b",
             description=_render_template(description_template, member)[:DESCRIPTION_MAX_LENGTH] or "\u200b",
@@ -225,11 +231,18 @@ class WelcomeCog(commands.Cog):
         )
 
     async def _send_welcome(self, member: discord.Member, channel: discord.TextChannel) -> None:
-        embed = await self._build_embed_for(member)
+        container = await self._build_container_for(member)
         mention_enabled = await RuntimeSettings(self.bot.db).welcome_mention_enabled()
-        content = member.mention if mention_enabled else None
+        view = components.NoctraLayout(container, timeout=None)
+        # allowed_mentions ini yang BENERAN nentuin ping kejadian atau
+        # enggak -- lepas dari ada/enggaknya {mention} di title/description.
+        # Kalau staff gak nyantumin {mention} sama sekali di template
+        # mereka, toggle /welcome mention emang gak ngefek apa-apa (gak ada
+        # yang bisa di-ping), itu udah sesuai ekspektasi -- {mention} sekarang
+        # placeholder biasa kayak {server}/{date}, cuma nongol kalau dipake.
+        allowed = discord.AllowedMentions(users=mention_enabled, roles=False, everyone=False)
         try:
-            await channel.send(content=content, embed=embed)
+            await channel.send(view=view, allowed_mentions=allowed)
         except discord.HTTPException:
             logger.exception("Gagal posting pesan sambutan buat %s di channel %s.", member, channel.id)
 
@@ -251,15 +264,16 @@ class WelcomeCog(commands.Cog):
             )
             return
 
-        preview = await self._build_embed_for(interaction.user)
-        await interaction.response.send_message(
-            content=(
+        preview_container = await self._build_container_for(interaction.user)
+        view = discord.ui.LayoutView(timeout=None)
+        view.add_item(
+            discord.ui.TextDisplay(
                 "Berhasil disimpen! Ini preview-nya (dirender pake akun kamu sendiri -- "
                 "kalau ada `{mention}` dkk, itu bakal keganti data member asli pas beneran ada yang gabung):"
-            ),
-            embed=preview,
-            ephemeral=True,
+            )
         )
+        view.add_item(preview_container)
+        await interaction.response.send_message(view=view, ephemeral=True)
 
     # -- Command /welcome -----------------------------------------------------
 
@@ -375,12 +389,15 @@ class WelcomeCog(commands.Cog):
             f"▸ **Banner:** {'Diatur' if await runtime.welcome_banner_url() else 'Belum diatur'}",
             f"▸ **Icon footer:** {'Custom' if await runtime.welcome_footer_icon_url() else 'Ikon server (default)'}",
         ]
-        preview = await self._build_embed_for(interaction.user)
-        await interaction.response.send_message(
-            content="\n".join(summary_lines) + "\n\nPreview (dirender pake akun kamu sendiri):",
-            embed=preview,
-            ephemeral=True,
+        preview_container = await self._build_container_for(interaction.user)
+        view = discord.ui.LayoutView(timeout=None)
+        view.add_item(
+            discord.ui.TextDisplay(
+                "\n".join(summary_lines) + "\n\nPreview (dirender pake akun kamu sendiri):"
+            )
         )
+        view.add_item(preview_container)
+        await interaction.response.send_message(view=view, ephemeral=True)
 
     @welcome_group.command(
         name="placeholders", description="Liat daftar placeholder yang bisa dipake di judul/deskripsi/footer."
