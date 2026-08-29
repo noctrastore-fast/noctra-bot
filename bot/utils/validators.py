@@ -1,4 +1,6 @@
-"""Logic validasi buat dynamic input field produk yang diatur admin."""
+"""Logic validasi buat dynamic input field produk yang diatur admin, plus
+beberapa validator kecil yang dipake bareng di command lain (misal warna
+aksen embed)."""
 
 from __future__ import annotations
 
@@ -7,6 +9,7 @@ import unicodedata
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _CUSTOM_EMOJI_RE = re.compile(r"^<a?:\w{2,32}:(\d{15,21})>$")
+_HEX_COLOR_RE = re.compile(r"^#?[0-9a-fA-F]{6}$")
 
 
 class FieldValidationError(ValueError):
@@ -78,3 +81,18 @@ def is_valid_emoji(value: str) -> bool:
     if len(value) > 16:
         return False
     return all(_char_is_emoji_ish(ch) for ch in value)
+
+
+def parse_hex_color(value: str | None, default: int) -> tuple[int | None, str | None]:
+    """Parse kode warna hex (misal '#7C5CFF' atau '7C5CFF') jadi integer
+    warna buat discord.Embed. Return (color, error_message) --
+    error_message None kalau valid ATAU kalau `value` kosong (dalam kasus
+    itu `default` yang dibalikin, dipake buat command yang warnanya
+    opsional). Dipake bareng sama /iklan dan /welcome color biar aturan
+    formatnya konsisten di semua tempat."""
+    if not value:
+        return default, None
+    cleaned = value.strip()
+    if not _HEX_COLOR_RE.match(cleaned):
+        return None, "Warna harus kode hex 6 digit, misal `#7C5CFF` atau `7C5CFF`."
+    return int(cleaned.lstrip("#"), 16), None

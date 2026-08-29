@@ -51,6 +51,20 @@ class RuntimeSettings:
             return env_default
         return value
 
+    async def _get_id_list(self, key: str) -> list[int]:
+        """Parse setting yang nyimpen list ID sebagai string dipisah koma
+        (dipake buat leaderboard_excluded_users, join_role_user_ids,
+        join_role_bot_ids, dst)."""
+        value = await self._get(key, "")
+        if not value:
+            return []
+        ids: list[int] = []
+        for piece in str(value).split(","):
+            piece = piece.strip()
+            if piece.isdigit():
+                ids.append(int(piece))
+        return ids
+
     async def staff_role_id(self) -> int | None:
         value = await self._get("staff_role_id", config.staff_role_id)
         return int(value) if value else None
@@ -75,15 +89,7 @@ class RuntimeSettings:
         lewat /settings leaderboard_exclude -- misal akun staff/tester yang
         dipake buat nyoba checkout, yang spend-nya gak seharusnya kehitung
         di leaderboard publik. Disimpan sebagai string ID dipisah koma."""
-        value = await self._get("leaderboard_excluded_users", "")
-        if not value:
-            return []
-        ids: list[int] = []
-        for piece in str(value).split(","):
-            piece = piece.strip()
-            if piece.isdigit():
-                ids.append(int(piece))
-        return ids
+        return await self._get_id_list("leaderboard_excluded_users")
 
     async def purchase_feed_channel_id(self) -> int | None:
         """Channel publik tempat kartu "Si X baru aja beli Y" diposting
@@ -137,3 +143,71 @@ class RuntimeSettings:
     async def default_currency(self) -> str:
         value = await self._get("default_currency", config.default_currency)
         return str(value)
+
+    # -- Pesan sambutan member baru (/welcome) -------------------------------
+
+    async def welcome_enabled(self) -> bool:
+        value = await self._get("welcome_enabled", "1")
+        return str(value) == "1"
+
+    async def welcome_mention_enabled(self) -> bool:
+        """Apakah member yang baru gabung di-ping (lewat message content)
+        pas pesan sambutan diposting -- default nyala, diatur lewat
+        /welcome mention."""
+        value = await self._get("welcome_mention_enabled", "1")
+        return str(value) == "1"
+
+    async def welcome_channel_id(self) -> int | None:
+        value = await self._get("welcome_channel_id", None)
+        return int(value) if value else None
+
+    async def welcome_title(self) -> str | None:
+        """Template judul embed sambutan -- None berarti belum diatur,
+        caller fallback ke default bawaan. String kosong (hasil ngosongin
+        field pas /welcome setup) DIANGGEP sama kayak belum diatur, biar
+        staff bisa "reset ke default" cukup dengan ngosongin field-nya."""
+        value = await self._get("welcome_title", None)
+        return value or None
+
+    async def welcome_description(self) -> str | None:
+        value = await self._get("welcome_description", None)
+        return value or None
+
+    async def welcome_banner_url(self) -> str | None:
+        """URL gambar banner full-width buat pesan sambutan -- HARUS URL
+        yang udah di-hosting (bukan upload attachment), soalnya pesan ini
+        diposting otomatis berkali-kali setiap ada yang gabung, gak kayak
+        /iklan yang cuma sekali kirim manual."""
+        value = await self._get("welcome_banner_url", None)
+        return value or None
+
+    async def welcome_footer_text(self) -> str | None:
+        value = await self._get("welcome_footer_text", None)
+        return value or None
+
+    async def welcome_footer_icon_url(self) -> str | None:
+        """URL icon kecil di footer -- kalau belum diatur, fallback ke
+        icon server (bukan avatar bot), lihat bot.cogs.welcome."""
+        value = await self._get("welcome_footer_icon_url", None)
+        return value or None
+
+    async def welcome_color(self) -> int | None:
+        value = await self._get("welcome_color", None)
+        if not value:
+            return None
+        try:
+            return int(str(value))
+        except ValueError:
+            return None
+
+    # -- Auto join-role (/joinrole) -------------------------------------------
+
+    async def join_role_user_ids(self) -> list[int]:
+        """Role yang otomatis kepasang ke MEMBER BIASA (bukan bot) pas
+        gabung -- diatur lewat /joinrole add target:user."""
+        return await self._get_id_list("join_role_user_ids")
+
+    async def join_role_bot_ids(self) -> list[int]:
+        """Role yang otomatis kepasang ke BOT pas ditambahin ke server --
+        diatur lewat /joinrole add target:bot."""
+        return await self._get_id_list("join_role_bot_ids")
