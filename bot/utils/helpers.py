@@ -211,3 +211,43 @@ class RuntimeSettings:
         """Role yang otomatis kepasang ke BOT pas ditambahin ke server --
         diatur lewat /joinrole add target:bot."""
         return await self._get_id_list("join_role_bot_ids")
+
+    # -- Status toko (/storestatus) -------------------------------------------
+
+    async def store_status_channel_id(self) -> int | None:
+        """Channel tempat embed status toko diposting/di-update --
+        diatur lewat /storestatus channel."""
+        value = await self._get("store_status_channel_id", None)
+        return int(value) if value else None
+
+    async def store_status_message_id(self) -> int | None:
+        """ID pesan embed status toko yang lagi aktif, dipake buat edit-in-place
+        pas staff toggle buka/tutup (bukan kirim pesan baru tiap kali) --
+        di-reset ke kosong kalau channel-nya diganti."""
+        value = await self._get("store_status_message_id", None)
+        return int(value) if value else None
+
+    async def store_status_state(self) -> str:
+        """State toko sekarang: 'open' atau 'closed'. Default 'closed'
+        sampe staff toggle manual lewat /storestatus open|close -- gak ada
+        jadwal otomatis, semuanya manual."""
+        value = await self._get("store_status_state", "closed")
+        return str(value) if value in ("open", "closed") else "closed"
+
+    async def store_status_note(self) -> str | None:
+        """Catetan opsional yang nempel di bawah status (misal 'balik lagi
+        jam 9 pagi WIB') -- diisi tiap kali /storestatus open|close dipanggil,
+        kosong kalau staff gak ngisi parameter catatan."""
+        return await self._get("store_status_note", None)
+
+    async def store_status_emoji_open(self) -> str:
+        """Emoji custom buat indikator status BUKA -- diatur lewat
+        /storestatus emoji, default emoji bulet hijau bawaan Discord."""
+        value = await self._get("store_status_emoji_open", "\U0001F7E2")
+        return str(value)
+
+    async def store_status_emoji_closed(self) -> str:
+        """Emoji custom buat indikator status TUTUP -- diatur lewat
+        /storestatus emoji, default emoji bulet merah bawaan Discord."""
+        value = await self._get("store_status_emoji_closed", "\U0001F534")
+        return str(value)
