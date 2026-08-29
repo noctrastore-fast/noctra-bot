@@ -18,8 +18,6 @@ menang -- URL-nya diabaikan diam-diam.
 
 from __future__ import annotations
 
-import re
-
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -28,6 +26,7 @@ from bot.core.theme import COLOR_ACCENT
 from bot.ui import embeds
 from bot.utils.helpers import RuntimeSettings
 from bot.utils.permissions import staff_only
+from bot.utils.validators import parse_hex_color
 
 # Limit Discord buat embed title/description masing-masing 256 dan 4096
 # karakter -- description dikasih sedikit ruang di bawah limit keras biar
@@ -35,18 +34,7 @@ from bot.utils.permissions import staff_only
 TITLE_MAX_LENGTH = 256
 DESCRIPTION_MAX_LENGTH = 4000
 
-_HEX_COLOR_RE = re.compile(r"^#?[0-9a-fA-F]{6}$")
 _IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
-
-
-def _parse_color(warna: str | None, default: int) -> tuple[int | None, str | None]:
-    """Return (color, error_message) -- error_message None kalau valid/kosong."""
-    if not warna:
-        return default, None
-    cleaned = warna.strip()
-    if not _HEX_COLOR_RE.match(cleaned):
-        return None, "Warna harus kode hex 6 digit, misal `#7C5CFF` atau `7C5CFF`."
-    return int(cleaned.lstrip("#"), 16), None
 
 
 async def _attachment_to_file(
@@ -111,7 +99,7 @@ class AdvertisementCog(commands.Cog):
             )
             return
 
-        color, color_error = _parse_color(warna, COLOR_ACCENT)
+        color, color_error = parse_hex_color(warna, COLOR_ACCENT)
         if color_error:
             await interaction.response.send_message(embed=embeds.error_embed(color_error), ephemeral=True)
             return
