@@ -61,7 +61,8 @@ class StoreStatusCog(commands.Cog):
 
         emoji_open = await runtime.store_status_emoji_open()
         emoji_closed = await runtime.store_status_emoji_closed()
-        embed = embeds.store_status_embed(state, emoji_open, emoji_closed, note)
+        thumbnail_url = await runtime.store_status_thumbnail_url()
+        embed = embeds.store_status_embed(state, emoji_open, emoji_closed, note, thumbnail_url)
 
         message_id = await runtime.store_status_message_id()
         if message_id:
@@ -172,6 +173,21 @@ class StoreStatusCog(commands.Cog):
             ephemeral=True,
         )
 
+    @storestatus_group.command(name="thumbnail", description="Atur/hapus gambar thumbnail kecil buat embed status toko.")
+    @app_commands.describe(image_url="URL gambar thumbnail (PNG/JPG/WebP) -- kosongin buat hapus thumbnail")
+    @staff_only()
+    async def thumbnail(self, interaction: discord.Interaction, image_url: str | None = None) -> None:
+        await settings_q.set_setting(self.bot.db, "store_status_thumbnail_url", image_url or "")
+
+        runtime = RuntimeSettings(self.bot.db)
+        state = await runtime.store_status_state()
+        note = await runtime.store_status_note()
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await self._refresh_status_message(interaction, state, note)
+
+        message = "Thumbnail status toko udah diatur." if image_url else "Thumbnail status toko udah dihapus."
+        await interaction.followup.send(embed=embeds.success_embed(message), ephemeral=True)
+
     @storestatus_group.command(name="view", description="Liat pengaturan status toko yang lagi aktif.")
     @staff_only()
     async def view(self, interaction: discord.Interaction) -> None:
@@ -183,6 +199,7 @@ class StoreStatusCog(commands.Cog):
             f"▸ **Channel:** {f'<#{channel_id}>' if channel_id else 'Belum diatur'}",
             f"▸ **Emoji Buka:** {await runtime.store_status_emoji_open()}",
             f"▸ **Emoji Tutup:** {await runtime.store_status_emoji_closed()}",
+            f"▸ **Thumbnail:** {'Diatur' if await runtime.store_status_thumbnail_url() else 'Belum diatur'}",
             f"▸ **Catatan aktif:** {await runtime.store_status_note() or 'Gak ada'}",
         ]
         await interaction.response.send_message(
