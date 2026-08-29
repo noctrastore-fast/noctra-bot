@@ -56,16 +56,31 @@ class NoctraBot(commands.Bot):
         self._register_dynamic_items()
         setup_error_handler(self)
 
-        await self._clear_stale_guild_commands()
+        # Sync command dijalanin di BACKGROUND (bukan di-await langsung di
+        # sini) -- setup_hook() WAJIB kelar dulu sebelum bot connect ke
+        # gateway (baru abis itu bot keliatan online di Discord). Kalau
+        # sync-nya kena rate limit (429), discord.py otomatis nunggu +
+        # retry sampe berhasil -- kalau itu di-await langsung di sini, bot
+        # bakal keliatan OFFLINE di Discord sepanjang proses nunggu itu
+        # (bisa bermenit-menit, apalagi abis redeploy beberapa kali
+        # beruntun). Dipisah ke task sendiri biar bot tetep online normal
+        # duluan, command-nya nyusul ke-update begitu sync-nya kelar.
+        self.loop.create_task(self._sync_commands())
 
-        if config.guild_id:
-            guild = discord.Object(id=config.guild_id)
-            self.tree.copy_global_to(guild=guild)
-            synced = await self.tree.sync(guild=guild)
-            logger.info("Synced %d commands to guild %s.", len(synced), config.guild_id)
-        else:
-            synced = await self.tree.sync()
-            logger.info("Synced %d global commands.", len(synced))
+    async def _sync_commands(self) -> None:
+        try:
+            await self._clear_stale_guild_commands()
+
+            if config.guild_id:
+                guild = discord.Object(id=config.guild_id)
+                self.tree.copy_global_to(guild=guild)
+                synced = await self.tree.sync(guild=guild)
+                logger.info("Synced %d commands to guild %s.", len(synced), config.guild_id)
+            else:
+                synced = await self.tree.sync()
+                logger.info("Synced %d global commands.", len(synced))
+        except Exception:  # noqa: BLE001
+            logger.exception("Gagal sync command tree ke Discord.")
 
     async def _clear_stale_guild_commands(self) -> None:
         """One-time fix for duplicate slash commands: if the bot was ever
