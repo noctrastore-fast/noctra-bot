@@ -232,6 +232,41 @@ def advertisement_embed(
     return base_embed(title, description, color=color)
 
 
+# -- Sambutan Member Baru --------------------------------------------------------
+
+def welcome_embed(
+    member: discord.Member,
+    title: str,
+    description: str,
+    footer_text: str,
+    footer_icon_url: str | None = None,
+    banner_url: str | None = None,
+    color: int = COLOR_ACCENT,
+) -> discord.Embed:
+    """Embed sambutan buat member baru (dipake bot.cogs.welcome, dipicu
+    dari event on_member_join). Beda dari base_embed() biasa -- footer di
+    sini KUSTOM (teks + icon-nya staff yang atur lewat /welcome setup),
+    bukan footer brand baku, soalnya /welcome dirancang biar staff bisa
+    branding sendiri.
+
+    thumbnail SELALU avatar member yang baru gabung (gak bisa diganti --
+    itu emang intinya "pesan sambutan personal"), dan ada field "Bergabung"
+    otomatis yang nunjukin tanggal & jam join persis pake Discord timestamp
+    (ikut nyesuain timezone tiap orang yang liat)."""
+    embed = discord.Embed(title=title, description=description, color=color)
+    embed.set_thumbnail(url=member.display_avatar.url)
+    if banner_url:
+        embed.set_image(url=banner_url)
+
+    joined_at = member.joined_at or discord.utils.utcnow()
+    joined_ts = int(joined_at.timestamp())
+    embed.add_field(name="Bergabung", value=f"<t:{joined_ts}:F>  ({MARK_DASH} <t:{joined_ts}:R>)", inline=False)
+
+    embed.set_footer(text=footer_text or None, icon_url=footer_icon_url)
+    embed.timestamp = datetime.utcnow()
+    return embed
+
+
 def ticket_welcome_embed(order_summary_text: str | None = None) -> discord.Embed:
     description = (
         "Makasih udah buka ticket. Staff kita bakal bantuin kamu sebentar lagi.\n\n"
