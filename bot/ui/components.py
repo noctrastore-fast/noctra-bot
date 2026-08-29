@@ -28,7 +28,7 @@ from datetime import datetime
 import discord
 
 from bot.core.emojis import EMOJI_SUCCESS
-from bot.core.theme import COLOR_PRIMARY, COLOR_SUCCESS, FOOTER_TEXT, MARK_DASH, star_rating
+from bot.core.theme import COLOR_ACCENT, COLOR_PRIMARY, COLOR_SUCCESS, FOOTER_TEXT, MARK_DASH, star_rating
 from bot.utils.helpers import calculate_final_price, discount_label, format_price
 
 
@@ -182,3 +182,65 @@ def product_detail_container(product, fields: list, rating_summary: dict) -> dis
     children.append(discord.ui.TextDisplay(_footer_line()))
 
     return discord.ui.Container(*children, accent_colour=COLOR_PRIMARY)
+
+
+# -- Sambutan Member Baru --------------------------------------------------------
+
+def welcome_container(
+    member: discord.Member,
+    title: str,
+    description: str,
+    footer_text: str,
+    footer_icon_url: str | None = None,
+    banner_url: str | None = None,
+    color: int = COLOR_ACCENT,
+) -> discord.ui.Container:
+    """Card sambutan member baru -- gantiin embeds.welcome_embed() lama,
+    dipindah ke Components V2 biar tiap bagian (judul+deskripsi, tanggal
+    gabung, banner, footer) kepisah jelas pake garis Separator selebar
+    card, bukan numpuk jadi satu blok teks kayak embed klasik.
+
+    PENTING soal mention/ping: placeholder {mention} di title/description
+    (udah diganti jadi member.mention beneran sama _render_template() di
+    welcome.py sebelum nyampe sini) BAKAL NGE-PING beneran begitu kekirim,
+    beda sama embed klasik yang gak PERNAH ping apapun formatnya -- soalnya
+    TextDisplay di Components V2 diperlakuin kayak message content asli
+    buat urusan notifikasi (bukan kayak field embed). Nyala/mati-nya ping
+    tetep dikontrol dari LUAR fungsi ini lewat parameter `allowed_mentions`
+    pas channel.send() (lihat welcome.py._send_welcome), BUKAN dari sini --
+    biar toggle /welcome mention tetep konsisten kepake gimanapun staff
+    nulis template judul/deskripsinya sendiri."""
+    header_text = discord.ui.TextDisplay(f"## {title}\n{description}")
+    header = discord.ui.Section(header_text, accessory=discord.ui.Thumbnail(media=member.display_avatar.url))
+
+    joined_at = member.joined_at or discord.utils.utcnow()
+    joined_ts = int(joined_at.timestamp())
+    join_block = discord.ui.TextDisplay(
+        f"**Bergabung**\n<t:{joined_ts}:F>  ({MARK_DASH} <t:{joined_ts}:R>)"
+    )
+
+    children: list = [
+        header,
+        discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small),
+        join_block,
+    ]
+
+    if banner_url:
+        children.append(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
+        children.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner_url)))
+
+    if footer_text:
+        children.append(discord.ui.Separator(visible=False))
+        footer_display = discord.ui.TextDisplay(f"-# {footer_text}")
+        # Icon footer (kalau diatur) ditaro sebagai accessory Section, sisi
+        # kanan -- beda posisi dari footer embed klasik (icon kecil di kiri
+        # nempel teks), soalnya Components V2 gak punya slot footer bawaan
+        # yang bisa naro icon di kiri.
+        footer = (
+            discord.ui.Section(footer_display, accessory=discord.ui.Thumbnail(media=footer_icon_url))
+            if footer_icon_url
+            else footer_display
+        )
+        children.append(footer)
+
+    return discord.ui.Container(*children, accent_colour=color)
