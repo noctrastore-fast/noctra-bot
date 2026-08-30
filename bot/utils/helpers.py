@@ -10,6 +10,25 @@ from bot.database.core import Database
 from bot.database.queries import settings as settings_q
 
 
+def guild_scoped_key(base: str, guild_id: int) -> str:
+    """Namespace-in key setting per-guild -- dipake KHUSUS /welcome & /joinrole
+    (lihat bot.cogs.welcome) biar tiap server yang bot ini nemplok punya
+    pesan sambutan & auto join-role sendiri-sendiri, TANPA ubah skema tabel
+    `settings` yang masih global apa adanya buat semua fitur toko lainnya
+    (category/product/order/ticket/settings/dst -- itu semua SENGAJA tetep
+    satu-toko-satu-config, gak per-guild, soalnya NOCTRA emang didesain
+    satu toko yang kebetulan bot-nya numpang di beberapa server lain).
+
+    Formatnya "{base}:{guild_id}". PENTING: ini beda dari key lama yang
+    dipake sebelum per-guild scoping ini ada (misal "welcome_channel_id"
+    polos tanpa suffix) -- key lama otomatis kebaca "belum diatur" di
+    server manapun, TERMASUK server utama yang udah pernah di-setup
+    sebelumnya. Staff perlu `/welcome setup` + `/welcome channel` ulang
+    sekali buat server utama abis migrasi ini (data lama gak kehapus,
+    cuma gak kebaca lagi)."""
+    return f"{base}:{guild_id}"
+
+
 def calculate_final_price(
     base_price: float, discount_type: str | None, discount_value: float
 ) -> float:
@@ -144,49 +163,52 @@ class RuntimeSettings:
         value = await self._get("default_currency", config.default_currency)
         return str(value)
 
-    # -- Pesan sambutan member baru (/welcome) -------------------------------
+    # -- Pesan sambutan member baru (/welcome) ---------------------------------
+    # Method di bawah ini SEMUANYA per-guild (parameter guild_id wajib) --
+    # beda dari method lain di kelas ini yang masih global. Lihat docstring
+    # guild_scoped_key() di atas buat alasannya.
 
-    async def welcome_enabled(self) -> bool:
-        value = await self._get("welcome_enabled", "1")
+    async def welcome_enabled(self, guild_id: int) -> bool:
+        value = await self._get(guild_scoped_key("welcome_enabled", guild_id), "1")
         return str(value) == "1"
 
-    async def welcome_mention_enabled(self) -> bool:
+    async def welcome_mention_enabled(self, guild_id: int) -> bool:
         """Apakah member yang baru gabung di-ping (lewat message content)
         pas pesan sambutan diposting -- default nyala, diatur lewat
         /welcome mention."""
-        value = await self._get("welcome_mention_enabled", "1")
+        value = await self._get(guild_scoped_key("welcome_mention_enabled", guild_id), "1")
         return str(value) == "1"
 
-    async def welcome_channel_id(self) -> int | None:
-        value = await self._get("welcome_channel_id", None)
+    async def welcome_channel_id(self, guild_id: int) -> int | None:
+        value = await self._get(guild_scoped_key("welcome_channel_id", guild_id), None)
         return int(value) if value else None
 
-    async def welcome_title(self) -> str | None:
+    async def welcome_title(self, guild_id: int) -> str | None:
         """Template judul embed sambutan -- None berarti belum diatur,
         caller fallback ke default bawaan. String kosong (hasil ngosongin
         field pas /welcome setup) DIANGGEP sama kayak belum diatur, biar
         staff bisa "reset ke default" cukup dengan ngosongin field-nya."""
-        value = await self._get("welcome_title", None)
+        value = await self._get(guild_scoped_key("welcome_title", guild_id), None)
         return value or None
 
-    async def welcome_description(self) -> str | None:
-        value = await self._get("welcome_description", None)
+    async def welcome_description(self, guild_id: int) -> str | None:
+        value = await self._get(guild_scoped_key("welcome_description", guild_id), None)
         return value or None
 
-    async def welcome_banner_url(self) -> str | None:
+    async def welcome_banner_url(self, guild_id: int) -> str | None:
         """URL gambar banner full-width buat pesan sambutan -- HARUS URL
         yang udah di-hosting (bukan upload attachment), soalnya pesan ini
         diposting otomatis berkali-kali setiap ada yang gabung, gak kayak
         /iklan yang cuma sekali kirim manual."""
-        value = await self._get("welcome_banner_url", None)
+        value = await self._get(guild_scoped_key("welcome_banner_url", guild_id), None)
         return value or None
 
-    async def welcome_footer_text(self) -> str | None:
-        value = await self._get("welcome_footer_text", None)
+    async def welcome_footer_text(self, guild_id: int) -> str | None:
+        value = await self._get(guild_scoped_key("welcome_footer_text", guild_id), None)
         return value or None
 
-    async def welcome_color(self) -> int | None:
-        value = await self._get("welcome_color", None)
+    async def welcome_color(self, guild_id: int) -> int | None:
+        value = await self._get(guild_scoped_key("welcome_color", guild_id), None)
         if not value:
             return None
         try:
@@ -194,17 +216,18 @@ class RuntimeSettings:
         except ValueError:
             return None
 
-    # -- Auto join-role (/joinrole) -------------------------------------------
+    # -- Auto join-role (/joinrole) --------------------------------------------
+    # Sama kayak /welcome di atas -- per-guild, lihat guild_scoped_key().
 
-    async def join_role_user_ids(self) -> list[int]:
+    async def join_role_user_ids(self, guild_id: int) -> list[int]:
         """Role yang otomatis kepasang ke MEMBER BIASA (bukan bot) pas
         gabung -- diatur lewat /joinrole add target:user."""
-        return await self._get_id_list("join_role_user_ids")
+        return await self._get_id_list(guild_scoped_key("join_role_user_ids", guild_id))
 
-    async def join_role_bot_ids(self) -> list[int]:
+    async def join_role_bot_ids(self, guild_id: int) -> list[int]:
         """Role yang otomatis kepasang ke BOT pas ditambahin ke server --
         diatur lewat /joinrole add target:bot."""
-        return await self._get_id_list("join_role_bot_ids")
+        return await self._get_id_list(guild_scoped_key("join_role_bot_ids", guild_id))
 
     # -- Status toko (/storestatus) -------------------------------------------
 
