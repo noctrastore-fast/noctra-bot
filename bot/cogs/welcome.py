@@ -1,6 +1,11 @@
 """
 Command staff: /welcome dan /joinrole.
 
+/welcome dan /joinrole itu PER-SERVER (guild_scoped_key() di helpers.py) --
+tiap server yang bot ini numpang punya pesan sambutan & auto join-role
+sendiri-sendiri, gak nyampur kayak fitur toko lainnya (/category, /product,
+dst yang masih satu-toko-satu-config global, sengaja gak diubah).
+
 /welcome -- pesan sambutan otomatis pas ada member baru gabung ke server.
 Dirender pake Components V2 (bukan embed klasik): thumbnail avatar member
 (otomatis, gak perlu diatur), garis Separator di antara tiap bagian
@@ -37,7 +42,7 @@ from bot.core.logger import logger
 from bot.core.theme import COLOR_ACCENT
 from bot.database.queries import settings as settings_q
 from bot.ui import components, embeds
-from bot.utils.helpers import RuntimeSettings
+from bot.utils.helpers import RuntimeSettings, guild_scoped_key
 from bot.utils.permissions import staff_only
 from bot.utils.validators import parse_hex_color
 
@@ -171,7 +176,11 @@ class WelcomeCog(commands.Cog):
 
     async def _assign_join_roles(self, member: discord.Member) -> None:
         runtime = RuntimeSettings(self.bot.db)
-        role_ids = await (runtime.join_role_bot_ids() if member.bot else runtime.join_role_user_ids())
+        role_ids = await (
+            runtime.join_role_bot_ids(member.guild.id)
+            if member.bot
+            else runtime.join_role_user_ids(member.guild.id)
+        )
         if not role_ids:
             return
         roles = [member.guild.get_role(rid) for rid in role_ids]
@@ -190,9 +199,9 @@ class WelcomeCog(commands.Cog):
 
     async def _post_welcome_message(self, member: discord.Member) -> None:
         runtime = RuntimeSettings(self.bot.db)
-        if not await runtime.welcome_enabled():
+        if not await runtime.welcome_enabled(member.guild.id):
             return
-        channel_id = await runtime.welcome_channel_id()
+        channel_id = await runtime.welcome_channel_id(member.guild.id)
         if not channel_id:
             return
         channel = self.bot.get_channel(channel_id)
@@ -202,11 +211,12 @@ class WelcomeCog(commands.Cog):
 
     async def _build_container_for(self, member: discord.Member) -> discord.ui.Container:
         runtime = RuntimeSettings(self.bot.db)
-        title_template = await runtime.welcome_title() or DEFAULT_TITLE
-        description_template = await runtime.welcome_description() or DEFAULT_DESCRIPTION
-        footer_template = await runtime.welcome_footer_text() or DEFAULT_FOOTER_TEXT
-        banner_url = await runtime.welcome_banner_url()
-        color = await runtime.welcome_color()
+        guild_id = member.guild.id
+        title_template = await runtime.welcome_title(guild_id) or DEFAULT_TITLE
+        description_template = await runtime.welcome_description(guild_id) or DEFAULT_DESCRIPTION
+        footer_template = await runtime.welcome_footer_text(guild_id) or DEFAULT_FOOTER_TEXT
+        banner_url = await runtime.welcome_banner_url(guild_id)
+        color = await runtime.welcome_color(guild_id)
 
         return components.welcome_container(
             member,
@@ -219,7 +229,7 @@ class WelcomeCog(commands.Cog):
 
     async def _send_welcome(self, member: discord.Member, channel: discord.TextChannel) -> None:
         container = await self._build_container_for(member)
-        mention_enabled = await RuntimeSettings(self.bot.db).welcome_mention_enabled()
+        mention_enabled = await RuntimeSettings(self.bot.db).welcome_mention_enabled(member.guild.id)
         view = components.NoctraLayout(container, timeout=None)
         # allowed_mentions ini yang BENERAN nentuin ping kejadian atau
         # enggak -- lepas dari ada/enggaknya {mention} di title/description.
@@ -235,14 +245,15 @@ class WelcomeCog(commands.Cog):
 
     async def _save_welcome_message(self, interaction: discord.Interaction, values: dict[str, str]) -> None:
         db = self.bot.db
+        guild_id = interaction.guild_id
         # String kosong SENGAJA disimpen apa adanya (bukan di-skip) --
         # itu yang bikin staff bisa "reset ke default" cukup dengan
         # ngosongin field-nya di modal (lihat RuntimeSettings.welcome_*
         # yang nganggep string kosong sama kayak belum diatur).
-        await settings_q.set_setting(db, "welcome_title", values["title"])
-        await settings_q.set_setting(db, "welcome_description", values["description"])
-        await settings_q.set_setting(db, "welcome_banner_url", values["banner_url"])
-        await settings_q.set_setting(db, "welcome_footer_text", values["footer_text"])
+        await settings_q.set_setting(db, guild_scoped_key("welcome_title", guild_id), values["title"])
+        await settings_q.set_setting(db, guild_scoped_key("welcome_description", guild_id), values["description"])
+        await settings_q.set_setting(db, guild_scoped_key("welcome_banner_url", guild_id), values["banner_url"])
+        await settings_q.set_setting(db, guild_scoped_key("welcome_footer_text", guild_id), values["footer_text"])
 
         if not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message(
@@ -267,11 +278,12 @@ class WelcomeCog(commands.Cog):
     @staff_only()
     async def setup_message(self, interaction: discord.Interaction) -> None:
         runtime = RuntimeSettings(self.bot.db)
+        guild_id = interaction.guild_id
         current = {
-            "title": await runtime.welcome_title(),
-            "description": await runtime.welcome_description(),
-            "banner_url": await runtime.welcome_banner_url(),
-            "footer_text": await runtime.welcome_footer_text(),
+            "title": await runtime.welcome_title(guild_id),
+            "description": await runtime.welcome_description(guild_id),
+            "banner_url": await runtime.welcome_banner_url(guild_id),
+            "footer_text": await runtime.welcome_footer_text(guild_id),
         }
         await interaction.response.send_modal(WelcomeMessageModal(current, self._save_welcome_message))
 
@@ -279,7 +291,9 @@ class WelcomeCog(commands.Cog):
     @app_commands.describe(channel="Channel buat pesan sambutan member baru")
     @staff_only()
     async def channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
-        await settings_q.set_setting(self.bot.db, "welcome_channel_id", str(channel.id))
+        await settings_q.set_setting(
+            self.bot.db, guild_scoped_key("welcome_channel_id", interaction.guild_id), str(channel.id)
+        )
         await interaction.response.send_message(
             embed=embeds.success_embed(
                 f"Channel sambutan diatur ke {channel.mention}. Pake `/welcome test` buat liat contoh hasilnya."
@@ -291,7 +305,9 @@ class WelcomeCog(commands.Cog):
     @app_commands.describe(enabled="True buat nyalain, False buat matiin")
     @staff_only()
     async def toggle(self, interaction: discord.Interaction, enabled: bool) -> None:
-        await settings_q.set_setting(self.bot.db, "welcome_enabled", "1" if enabled else "0")
+        await settings_q.set_setting(
+            self.bot.db, guild_scoped_key("welcome_enabled", interaction.guild_id), "1" if enabled else "0"
+        )
         state = "dinyalain" if enabled else "dimatiin"
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Pesan sambutan udah {state}."), ephemeral=True
@@ -303,7 +319,9 @@ class WelcomeCog(commands.Cog):
     @app_commands.describe(enabled="True buat nge-ping member-nya, False buat diem-diem aja")
     @staff_only()
     async def mention(self, interaction: discord.Interaction, enabled: bool) -> None:
-        await settings_q.set_setting(self.bot.db, "welcome_mention_enabled", "1" if enabled else "0")
+        await settings_q.set_setting(
+            self.bot.db, guild_scoped_key("welcome_mention_enabled", interaction.guild_id), "1" if enabled else "0"
+        )
         state = "bakal di-ping" if enabled else "gak bakal di-ping (embed doang)"
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Member yang baru gabung {state} pas pesan sambutan diposting."),
@@ -314,8 +332,9 @@ class WelcomeCog(commands.Cog):
     @app_commands.describe(warna="Kode warna hex, misal #7C5CFF -- kosongin buat balik ke default")
     @staff_only()
     async def color(self, interaction: discord.Interaction, warna: str | None = None) -> None:
+        key = guild_scoped_key("welcome_color", interaction.guild_id)
         if not warna:
-            await settings_q.set_setting(self.bot.db, "welcome_color", "")
+            await settings_q.set_setting(self.bot.db, key, "")
             await interaction.response.send_message(
                 embed=embeds.success_embed("Warna aksen pesan sambutan dibalikin ke default."), ephemeral=True
             )
@@ -324,7 +343,7 @@ class WelcomeCog(commands.Cog):
         if error:
             await interaction.response.send_message(embed=embeds.error_embed(error), ephemeral=True)
             return
-        await settings_q.set_setting(self.bot.db, "welcome_color", str(color))
+        await settings_q.set_setting(self.bot.db, key, str(color))
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Warna aksen pesan sambutan diatur ke `#{color:06X}`."), ephemeral=True
         )
@@ -337,7 +356,7 @@ class WelcomeCog(commands.Cog):
                 embed=embeds.error_embed("Command ini cuma bisa dipake di dalem server."), ephemeral=True
             )
             return
-        channel_id = await RuntimeSettings(self.bot.db).welcome_channel_id()
+        channel_id = await RuntimeSettings(self.bot.db).welcome_channel_id(interaction.guild_id)
         if not channel_id:
             await interaction.response.send_message(
                 embed=embeds.error_embed("Channel sambutan belum diatur. Pake `/welcome channel` dulu."),
@@ -366,12 +385,13 @@ class WelcomeCog(commands.Cog):
             )
             return
         runtime = RuntimeSettings(self.bot.db)
-        channel_id = await runtime.welcome_channel_id()
+        guild_id = interaction.guild_id
+        channel_id = await runtime.welcome_channel_id(guild_id)
         summary_lines = [
-            f"▸ **Status:** {'Aktif' if await runtime.welcome_enabled() else 'Nonaktif'}",
+            f"▸ **Status:** {'Aktif' if await runtime.welcome_enabled(guild_id) else 'Nonaktif'}",
             f"▸ **Channel:** {f'<#{channel_id}>' if channel_id else 'Belum diatur'}",
-            f"▸ **Ping member:** {'Nyala' if await runtime.welcome_mention_enabled() else 'Mati'}",
-            f"▸ **Banner:** {'Diatur' if await runtime.welcome_banner_url() else 'Belum diatur'}",
+            f"▸ **Ping member:** {'Nyala' if await runtime.welcome_mention_enabled(guild_id) else 'Mati'}",
+            f"▸ **Banner:** {'Diatur' if await runtime.welcome_banner_url(guild_id) else 'Belum diatur'}",
         ]
         preview_container = await self._build_container_for(interaction.user)
         view = discord.ui.LayoutView(timeout=None)
@@ -406,12 +426,12 @@ class WelcomeCog(commands.Cog):
 
     # -- Command /joinrole ------------------------------------------------------
 
-    async def _get_role_ids(self, target: str) -> list[int]:
+    async def _get_role_ids(self, target: str, guild_id: int) -> list[int]:
         runtime = RuntimeSettings(self.bot.db)
-        return await (runtime.join_role_bot_ids() if target == "bot" else runtime.join_role_user_ids())
+        return await (runtime.join_role_bot_ids(guild_id) if target == "bot" else runtime.join_role_user_ids(guild_id))
 
-    async def _set_role_ids(self, target: str, ids: list[int]) -> None:
-        key = JOIN_ROLE_SETTING_KEYS[target]
+    async def _set_role_ids(self, target: str, guild_id: int, ids: list[int]) -> None:
+        key = guild_scoped_key(JOIN_ROLE_SETTING_KEYS[target], guild_id)
         await settings_q.set_setting(self.bot.db, key, ",".join(str(i) for i in ids))
 
     @joinrole_group.command(name="add", description="Tambahin role yang otomatis kepasang pas ada yang baru gabung.")
@@ -434,7 +454,7 @@ class WelcomeCog(commands.Cog):
             )
             return
 
-        current = await self._get_role_ids(target)
+        current = await self._get_role_ids(target, interaction.guild_id)
         if role.id in current:
             await interaction.response.send_message(
                 embed=embeds.error_embed(f"{role.mention} udah ada di daftar join-role buat {target}."),
@@ -442,7 +462,7 @@ class WelcomeCog(commands.Cog):
             )
             return
         current.append(role.id)
-        await self._set_role_ids(target, current)
+        await self._set_role_ids(target, interaction.guild_id, current)
 
         warning = ""
         bot_member = interaction.guild.me if interaction.guild else None
@@ -462,7 +482,7 @@ class WelcomeCog(commands.Cog):
     @app_commands.describe(role="Role yang mau dihapus", target="Dari daftar user atau bot?")
     @staff_only()
     async def remove(self, interaction: discord.Interaction, role: discord.Role, target: RoleTarget) -> None:
-        current = await self._get_role_ids(target)
+        current = await self._get_role_ids(target, interaction.guild_id)
         if role.id not in current:
             await interaction.response.send_message(
                 embed=embeds.error_embed(f"{role.mention} emang gak ada di daftar join-role buat {target}."),
@@ -470,7 +490,7 @@ class WelcomeCog(commands.Cog):
             )
             return
         current.remove(role.id)
-        await self._set_role_ids(target, current)
+        await self._set_role_ids(target, interaction.guild_id, current)
         await interaction.response.send_message(
             embed=embeds.success_embed(f"{role.mention} udah dihapus dari daftar join-role."), ephemeral=True
         )
@@ -480,9 +500,9 @@ class WelcomeCog(commands.Cog):
     @staff_only()
     async def clear(self, interaction: discord.Interaction, target: ClearTarget) -> None:
         if target in ("user", "all"):
-            await self._set_role_ids("user", [])
+            await self._set_role_ids("user", interaction.guild_id, [])
         if target in ("bot", "all"):
-            await self._set_role_ids("bot", [])
+            await self._set_role_ids("bot", interaction.guild_id, [])
         await interaction.response.send_message(
             embed=embeds.success_embed("Daftar join-role udah dikosongin."), ephemeral=True
         )
@@ -491,8 +511,8 @@ class WelcomeCog(commands.Cog):
     @staff_only()
     async def list_roles(self, interaction: discord.Interaction) -> None:
         guild = interaction.guild
-        user_ids = await self._get_role_ids("user")
-        bot_ids = await self._get_role_ids("bot")
+        user_ids = await self._get_role_ids("user", interaction.guild_id)
+        bot_ids = await self._get_role_ids("bot", interaction.guild_id)
 
         def render(ids: list[int]) -> str:
             if not ids:
