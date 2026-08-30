@@ -4,10 +4,10 @@ Command staff: /welcome dan /joinrole.
 /welcome -- pesan sambutan otomatis pas ada member baru gabung ke server.
 Dirender pake Components V2 (bukan embed klasik): thumbnail avatar member
 (otomatis, gak perlu diatur), garis Separator di antara tiap bagian
-(judul+deskripsi / tanggal gabung / banner / footer), title + deskripsi
-custom (dukung placeholder kayak {mention}/{server}/{membercount}/{date}
-dan emoji custom server -- tinggal ketik langsung, gak butuh setup
-apapun), footer + icon footer custom.
+(judul / deskripsi / tanggal gabung / banner / footer), title + deskripsi
++ footer custom (dukung placeholder kayak {mention}/{server}/{membercount}
+/{date} dan emoji custom server -- tinggal ketik langsung di field manapun
+termasuk footer, gak butuh setup apapun).
 
 Soal {mention}: beda sama embed klasik yang gak pernah ping, di Components
 V2 placeholder ini BENERAN ngirim notifikasi ke member yang gabung kalau
@@ -18,9 +18,9 @@ dipake di title/description -- nyala/matinya diatur lewat /welcome mention
 member biasa vs bot (misal bot yang ditambahin ke server otomatis dikasih
 role "Bots" sementara member manusia dikasih role "Unverified").
 
-Kenapa banner/icon footer pesan sambutan cuma nerima URL (beda sama /iklan
-yang bisa upload attachment): pesan ini diposting OTOMATIS berkali-kali
-setiap ada yang gabung, jadi gambarnya harus URL yang beneran persisten
+Kenapa banner pesan sambutan cuma nerima URL (beda sama /iklan yang bisa
+upload attachment): pesan ini diposting OTOMATIS berkali-kali setiap ada
+yang gabung, jadi gambarnya harus URL yang beneran persisten
 (attachment://... cuma valid buat satu pesan spesifik pas dikirim, gak
 bisa dipake ulang buat kiriman di masa depan).
 """
@@ -133,17 +133,9 @@ class WelcomeMessageModal(discord.ui.Modal, title="Atur Pesan Sambutan"):
             placeholder=DEFAULT_FOOTER_TEXT,
             default=current.get("footer_text") or "",
         )
-        self.footer_icon_input = discord.ui.TextInput(
-            label="URL Icon Footer (opsional)",
-            style=discord.TextStyle.short,
-            required=False,
-            max_length=500,
-            placeholder="https://... (kosong = pake icon server)",
-            default=current.get("footer_icon_url") or "",
-        )
         for item in (
             self.title_input, self.description_input, self.banner_input,
-            self.footer_text_input, self.footer_icon_input,
+            self.footer_text_input,
         ):
             self.add_item(item)
 
@@ -153,7 +145,6 @@ class WelcomeMessageModal(discord.ui.Modal, title="Atur Pesan Sambutan"):
             "description": self.description_input.value.strip(),
             "banner_url": self.banner_input.value.strip(),
             "footer_text": self.footer_text_input.value.strip(),
-            "footer_icon_url": self.footer_icon_input.value.strip(),
         }
         await self._on_submit_callback(interaction, values)
 
@@ -215,9 +206,6 @@ class WelcomeCog(commands.Cog):
         description_template = await runtime.welcome_description() or DEFAULT_DESCRIPTION
         footer_template = await runtime.welcome_footer_text() or DEFAULT_FOOTER_TEXT
         banner_url = await runtime.welcome_banner_url()
-        footer_icon_url = await runtime.welcome_footer_icon_url()
-        if not footer_icon_url and member.guild.icon:
-            footer_icon_url = member.guild.icon.url
         color = await runtime.welcome_color()
 
         return components.welcome_container(
@@ -225,7 +213,6 @@ class WelcomeCog(commands.Cog):
             title=_render_template(title_template, member)[:TITLE_MAX_LENGTH] or "\u200b",
             description=_render_template(description_template, member)[:DESCRIPTION_MAX_LENGTH] or "\u200b",
             footer_text=_render_template(footer_template, member)[:FOOTER_MAX_LENGTH] or "\u200b",
-            footer_icon_url=footer_icon_url,
             banner_url=banner_url,
             color=color if color is not None else COLOR_ACCENT,
         )
@@ -256,7 +243,6 @@ class WelcomeCog(commands.Cog):
         await settings_q.set_setting(db, "welcome_description", values["description"])
         await settings_q.set_setting(db, "welcome_banner_url", values["banner_url"])
         await settings_q.set_setting(db, "welcome_footer_text", values["footer_text"])
-        await settings_q.set_setting(db, "welcome_footer_icon_url", values["footer_icon_url"])
 
         if not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message(
@@ -286,7 +272,6 @@ class WelcomeCog(commands.Cog):
             "description": await runtime.welcome_description(),
             "banner_url": await runtime.welcome_banner_url(),
             "footer_text": await runtime.welcome_footer_text(),
-            "footer_icon_url": await runtime.welcome_footer_icon_url(),
         }
         await interaction.response.send_modal(WelcomeMessageModal(current, self._save_welcome_message))
 
@@ -387,7 +372,6 @@ class WelcomeCog(commands.Cog):
             f"▸ **Channel:** {f'<#{channel_id}>' if channel_id else 'Belum diatur'}",
             f"▸ **Ping member:** {'Nyala' if await runtime.welcome_mention_enabled() else 'Mati'}",
             f"▸ **Banner:** {'Diatur' if await runtime.welcome_banner_url() else 'Belum diatur'}",
-            f"▸ **Icon footer:** {'Custom' if await runtime.welcome_footer_icon_url() else 'Ikon server (default)'}",
         ]
         preview_container = await self._build_container_for(interaction.user)
         view = discord.ui.LayoutView(timeout=None)
