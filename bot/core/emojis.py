@@ -22,7 +22,7 @@ from __future__ import annotations
 
 EMOJI_SUCCESS = "<a:b_yes:1534493624564322465>"
 EMOJI_ERROR = "<a:Cross1:1534493341759312083>"
-EMOJI_INFO = "<:9343iconinfo:1534494344000573510>"
+EMOJI_INFO = "<a:emoji_60:1536810141284958298>"
 
 # Tambahin di sini kalau butuh lebih banyak, contoh:
 # EMOJI_WARNING = "⚠️"
