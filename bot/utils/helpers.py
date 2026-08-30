@@ -185,12 +185,6 @@ class RuntimeSettings:
         value = await self._get("welcome_footer_text", None)
         return value or None
 
-    async def welcome_footer_icon_url(self) -> str | None:
-        """URL icon kecil di footer -- kalau belum diatur, fallback ke
-        icon server (bukan avatar bot), lihat bot.cogs.welcome."""
-        value = await self._get("welcome_footer_icon_url", None)
-        return value or None
-
     async def welcome_color(self) -> int | None:
         value = await self._get("welcome_color", None)
         if not value:
