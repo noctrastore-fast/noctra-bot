@@ -276,3 +276,49 @@ class RuntimeSettings:
         staff toggle, sama alasannya kayak welcome_banner_url."""
         value = await self._get("store_status_thumbnail_url", None)
         return value or None
+
+    # -- Kartu review publik (/settings review_emoji) --------------------------
+    # Dipake components.review_card_container() -- diposting ke
+    # /settings reviews_channel abis staff approve review.
+
+    async def review_card_emoji_title(self) -> str:
+        return str(await self._get("review_card_emoji_title", "\U0001F31F"))
+
+    async def review_card_emoji_user(self) -> str:
+        return str(await self._get("review_card_emoji_user", "\U0001F464"))
+
+    async def review_card_emoji_product(self) -> str:
+        return str(await self._get("review_card_emoji_product", "\U0001F4E6"))
+
+    async def review_card_emoji_star_filled(self) -> str:
+        return str(await self._get("review_card_emoji_star_filled", "\u2b50"))
+
+    async def review_card_emoji_star_empty(self) -> str:
+        return str(await self._get("review_card_emoji_star_empty", "\u2606"))
+
+    async def review_card_emoji_message(self) -> str:
+        return str(await self._get("review_card_emoji_message", "\U0001F4AC"))
+
+    # -- Notifikasi bukti foto review (/settings testi_proof_channel) ----------
+    # Dipake bot.cogs.review_photo -- BEDA dari reviews_channel di atas: ini
+    # notif INTERNAL staff langsung begitu foto masuk, bukan showcase publik
+    # yang nunggu approve.
+
+    async def testi_proof_channel_id(self) -> int | None:
+        value = await self._get("testi_proof_channel_id", None)
+        return int(value) if value else None
+
+    async def testi_proof_emoji_title(self) -> str:
+        return str(await self._get("testi_proof_emoji_title", "\U0001F4B0"))
+
+    async def testi_proof_emoji_buyer(self) -> str:
+        return str(await self._get("testi_proof_emoji_buyer", "\U0001F464"))
+
+    async def testi_proof_emoji_product(self) -> str:
+        return str(await self._get("testi_proof_emoji_product", "\U0001F4E6"))
+
+    async def testi_proof_emoji_price(self) -> str:
+        return str(await self._get("testi_proof_emoji_price", "\U0001F4B5"))
+
+    async def testi_proof_emoji_testi(self) -> str:
+        return str(await self._get("testi_proof_emoji_testi", "\U0001F31F"))

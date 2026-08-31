@@ -14,7 +14,7 @@ import discord
 from bot.core.logger import logger
 from bot.database.queries import products as products_q
 from bot.database.queries import reviews as reviews_q
-from bot.ui import embeds
+from bot.ui import components
 from bot.utils.helpers import RuntimeSettings
 
 
@@ -61,13 +61,23 @@ async def post_review_publicly(bot, review_id: int) -> bool:
     # avatar bot -- kalau staff belum atur, kartu review tanpa foto ya
     # tampil tanpa banner sama sekali.
     fallback_banner_url = await runtime.review_banner_url()
-    embed = embeds.review_card_embed(
-        review, product, author_display, author_avatar_url=author_avatar_url,
-        fallback_banner_url=fallback_banner_url, verified=True,
+    container = components.review_card_container(
+        review,
+        product,
+        author_display,
+        emoji_title=await runtime.review_card_emoji_title(),
+        emoji_user=await runtime.review_card_emoji_user(),
+        emoji_product=await runtime.review_card_emoji_product(),
+        emoji_star_filled=await runtime.review_card_emoji_star_filled(),
+        emoji_star_empty=await runtime.review_card_emoji_star_empty(),
+        emoji_message=await runtime.review_card_emoji_message(),
+        author_avatar_url=author_avatar_url,
+        banner_url=fallback_banner_url,
+        verified=True,
     )
 
     try:
-        await channel.send(embed=embed)
+        await channel.send(view=components.NoctraLayout(container, timeout=None))
         return True
     except discord.HTTPException:
         logger.exception("Gagal posting review #%s ke channel review.", review_id)
