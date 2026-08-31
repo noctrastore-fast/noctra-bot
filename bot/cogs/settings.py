@@ -76,7 +76,7 @@ class SettingsCog(commands.Cog):
 
     @settings_group.command(
         name="testi_proof_channel",
-        description="Atur channel notifikasi internal staff begitu customer kirim foto bukti review (beda dari reviews_channel yang publik).",
+        description="Atur channel notif internal begitu customer kirim foto bukti review (beda dari reviews_channel).",
     )
     @app_commands.describe(channel="Channel internal staff buat notifikasi bukti review")
     @staff_only()
