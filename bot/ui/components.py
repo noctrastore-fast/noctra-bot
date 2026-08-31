@@ -253,6 +253,7 @@ def review_card_container(
     emoji_title: str,
     emoji_user: str,
     emoji_product: str,
+    emoji_rating: str,
     emoji_star_filled: str,
     emoji_star_empty: str,
     emoji_message: str,
@@ -273,11 +274,17 @@ def review_card_container(
         else header_text
     )
 
-    stars = emoji_star_filled * review_row["rating"] + emoji_star_empty * (5 - review_row["rating"])
+    # " ".join (bukan concat langsung) SENGAJA -- jaraknya jangan ngandelin
+    # padding bawaan si emoji custom (bisa mepet/nempel kalau paddingnya
+    # tipis/gak ada), spasi eksplisit ini mastiin jaraknya konsisten
+    # gak peduli emoji apa yang staff atur lewat /settings review_emoji.
+    stars = " ".join(
+        [emoji_star_filled] * review_row["rating"] + [emoji_star_empty] * (5 - review_row["rating"])
+    )
     detail_block = discord.ui.TextDisplay(
         f"{emoji_user} **User** : {author_display}\n"
         f"{emoji_product} **Product** : {product_row['name']}\n"
-        f"{emoji_star_filled} **Rating** : {stars}"
+        f"{emoji_rating} **Rating** : {stars}"
     )
 
     children: list = [
