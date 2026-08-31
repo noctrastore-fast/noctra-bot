@@ -6,6 +6,12 @@ upload file -- jadi masukin foto ke review gak bisa lewat modal
 rating/teks itu sendiri. Sebagai gantinya, abis modal itu disubmit, NOCTRA
 minta customer buat kirim aja gambarnya sebagai pesan DM biasa (gak perlu
 link, gak perlu command), dan listener ini yang nangkep.
+
+Begitu fotonya masuk, ada 2 hal yang kejadian: (1) customer dapet DM
+konfirmasi kayak biasa, dan (2) notifikasi internal "TESTI MONEY" (lihat
+_notify_testi_proof) kekirim ke channel staff terpisah
+(/settings testi_proof_channel) -- BEDA dari kartu review publik yang baru
+muncul abis staff approve lewat /review admin approve.
 """
 
 from __future__ import annotations
@@ -13,10 +19,13 @@ from __future__ import annotations
 import discord
 from discord.ext import commands
 
+from bot.database.queries import orders as orders_q
+from bot.database.queries import products as products_q
 from bot.database.queries import reviews as reviews_q
-from bot.ui import embeds
+from bot.ui import components, embeds
 from bot.ui.views import build_join_server_view
 from bot.utils import order_actions
+from bot.utils.helpers import RuntimeSettings, format_price
 
 
 class ReviewPhotoCog(commands.Cog):
@@ -57,6 +66,58 @@ class ReviewPhotoCog(commands.Cog):
 
         # Bersihin pesan prompt "Mau Tambahin Foto?" sekarang tugasnya udah kelar.
         await order_actions.cleanup_dm_messages(self.bot, review["order_id"])
+
+        await self._notify_testi_proof(review, message.author, image_attachment.url)
+
+    async def _notify_testi_proof(
+        self, review, buyer: discord.User, photo_url: str
+    ) -> None:
+        """Notifikasi INTERNAL ke staff begitu foto bukti review masuk --
+        BEDA dari bot.utils.review_actions.post_review_publicly() yang
+        nge-post ke channel showcase publik abis staff approve; ini
+        langsung kekirim ke channel terpisah (/settings testi_proof_channel)
+        pas fotonya baru aja masuk, gak nunggu approval sama sekali. Gagal
+        diem-diem aja (channel belum diatur, order/product gak ketemu,
+        dst) -- jangan sampe nge-block alur konfirmasi DM ke customer di
+        atas, itu prioritas utama."""
+        db = self.bot.db
+        runtime = RuntimeSettings(db)
+        channel_id = await runtime.testi_proof_channel_id()
+        if not channel_id:
+            return
+        channel = self.bot.get_channel(channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            return
+
+        order = await orders_q.get_order(db, review["order_id"])
+        product = await products_q.get_product(db, review["product_id"])
+        if not order or not product:
+            return
+        price_text = format_price(order["total_price"], order["currency_label"])
+
+        container = components.testi_proof_container(
+            buyer_display=buyer.mention,
+            product_name=product["name"],
+            price_text=price_text,
+            testi_number=review["id"],
+            photo_url=photo_url,
+            emoji_title=await runtime.testi_proof_emoji_title(),
+            emoji_buyer=await runtime.testi_proof_emoji_buyer(),
+            emoji_product=await runtime.testi_proof_emoji_product(),
+            emoji_price=await runtime.testi_proof_emoji_price(),
+            emoji_testi=await runtime.testi_proof_emoji_testi(),
+        )
+        try:
+            # allowed_mentions=none() SENGAJA -- buyer_display pake
+            # buyer.mention biar tampilannya kayak chip mention di
+            # referensi (highlight biru), tapi ini notif ke STAFF, jadi
+            # gak boleh ikut nge-ping customer-nya di channel internal ini.
+            await channel.send(
+                view=components.NoctraLayout(container, timeout=None),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except discord.HTTPException:
+            pass
 
 
 async def setup(bot: commands.Bot) -> None:

@@ -12,6 +12,7 @@ from bot.ui.views import ShopPanelView
 from bot.utils.helpers import RuntimeSettings
 from bot.utils.leaderboard import refresh_leaderboard
 from bot.utils.permissions import staff_only
+from bot.utils.validators import is_valid_emoji
 
 
 class SettingsCog(commands.Cog):
@@ -72,6 +73,113 @@ class SettingsCog(commands.Cog):
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Channel review diatur ke {channel.mention}."), ephemeral=True
         )
+
+    @settings_group.command(
+        name="testi_proof_channel",
+        description="Atur channel notifikasi internal staff begitu customer kirim foto bukti review (beda dari reviews_channel yang publik).",
+    )
+    @app_commands.describe(channel="Channel internal staff buat notifikasi bukti review")
+    @staff_only()
+    async def testi_proof_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
+        await settings_q.set_setting(self.bot.db, "testi_proof_channel_id", str(channel.id))
+        await interaction.response.send_message(
+            embed=embeds.success_embed(f"Channel notifikasi bukti review diatur ke {channel.mention}."),
+            ephemeral=True,
+        )
+
+    async def _update_emoji_settings(
+        self, interaction: discord.Interaction, updates: dict[str, str | None]
+    ) -> bool:
+        """Helper bareng buat review_emoji & testi_proof_emoji -- validasi
+        semua parameter yang diisi dulu SEBELUM nyimpen apapun, biar gak
+        ada kondisi setengah update kalau salah satu emoji-nya invalid.
+        Return True kalau berhasil disimpen (caller kirim pesan sukses),
+        False kalau ada yang invalid (pesan error udah dikirim di sini)."""
+        for key, value in updates.items():
+            if value is not None and not is_valid_emoji(value):
+                await interaction.response.send_message(
+                    embed=embeds.error_embed(f"`{value}` bukan emoji yang valid."), ephemeral=True
+                )
+                return False
+        for key, value in updates.items():
+            if value is not None:
+                await settings_q.set_setting(self.bot.db, key, value)
+        return True
+
+    @settings_group.command(
+        name="review_emoji",
+        description="Atur emoji custom buat kartu review publik. Parameter yang gak diisi tetep kepake yang lama.",
+    )
+    @app_commands.describe(
+        title="Emoji di judul kartu review",
+        user="Emoji di baris User",
+        product="Emoji di baris Product",
+        star_filled="Emoji buat bintang terisi di Rating",
+        star_empty="Emoji buat bintang kosong di Rating",
+        message="Emoji di baris Pesan",
+    )
+    @staff_only()
+    async def review_emoji(
+        self,
+        interaction: discord.Interaction,
+        title: str | None = None,
+        user: str | None = None,
+        product: str | None = None,
+        star_filled: str | None = None,
+        star_empty: str | None = None,
+        message: str | None = None,
+    ) -> None:
+        ok = await self._update_emoji_settings(
+            interaction,
+            {
+                "review_card_emoji_title": title,
+                "review_card_emoji_user": user,
+                "review_card_emoji_product": product,
+                "review_card_emoji_star_filled": star_filled,
+                "review_card_emoji_star_empty": star_empty,
+                "review_card_emoji_message": message,
+            },
+        )
+        if ok:
+            await interaction.response.send_message(
+                embed=embeds.success_embed("Emoji kartu review udah diupdate."), ephemeral=True
+            )
+
+    @settings_group.command(
+        name="testi_proof_emoji",
+        description="Atur emoji custom buat notifikasi bukti review. Parameter yang gak diisi tetep kepake yang lama.",
+    )
+    @app_commands.describe(
+        title="Emoji di judul notifikasi",
+        buyer="Emoji di baris Buyer",
+        product="Emoji di baris Product",
+        price="Emoji di baris Price",
+        testi="Emoji di baris Testi #",
+    )
+    @staff_only()
+    async def testi_proof_emoji(
+        self,
+        interaction: discord.Interaction,
+        title: str | None = None,
+        buyer: str | None = None,
+        product: str | None = None,
+        price: str | None = None,
+        testi: str | None = None,
+    ) -> None:
+        ok = await self._update_emoji_settings(
+            interaction,
+            {
+                "testi_proof_emoji_title": title,
+                "testi_proof_emoji_buyer": buyer,
+                "testi_proof_emoji_product": product,
+                "testi_proof_emoji_price": price,
+                "testi_proof_emoji_testi": testi,
+            },
+        )
+        if ok:
+            await interaction.response.send_message(
+                embed=embeds.success_embed("Emoji notifikasi bukti review udah diupdate."), ephemeral=True
+            )
 
     @settings_group.command(
         name="purchase_feed_channel",
@@ -245,6 +353,7 @@ class SettingsCog(commands.Cog):
             "staff_role_id": await runtime.staff_role_id(),
             "order_log_channel_id": await runtime.order_log_channel_id(),
             "reviews_channel_id": await runtime.reviews_channel_id(),
+            "testi_proof_channel_id": await runtime.testi_proof_channel_id(),
             "purchase_feed_channel_id": await runtime.purchase_feed_channel_id(),
             "ad_channel_id": await runtime.ad_channel_id(),
             "main_server_invite_url": await runtime.main_server_invite_url(),
