@@ -268,11 +268,6 @@ def review_card_container(
     diatur staff lewat /settings review_emoji, sekali ganti kepake di semua
     kartu review berikutnya (bukan per-review)."""
     header_text = discord.ui.TextDisplay(f"## {emoji_title} REVIEW BARU #{review_row['id']}")
-    header = (
-        discord.ui.Section(header_text, accessory=discord.ui.Thumbnail(media=author_avatar_url))
-        if author_avatar_url
-        else header_text
-    )
 
     # " ".join (bukan concat langsung) SENGAJA -- jaraknya jangan ngandelin
     # padding bawaan si emoji custom (bisa mepet/nempel kalau paddingnya
@@ -286,11 +281,20 @@ def review_card_container(
         f"{emoji_product} **Product** : {product_row['name']}\n"
         f"{emoji_rating} **Rating** : {stars}"
     )
+    # Thumbnail avatar nempel ke blok User/Product/Rating, BUKAN ke judul --
+    # biar baris judul gak nyisain ruang kosong gede di sebelahnya (atas
+    # request Nikss). Beda dari welcome_container yang thumbnail-nya emang
+    # sengaja nempel ke judul.
+    detail_section = (
+        discord.ui.Section(detail_block, accessory=discord.ui.Thumbnail(media=author_avatar_url))
+        if author_avatar_url
+        else detail_block
+    )
 
     children: list = [
-        header,
+        header_text,
         discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small),
-        detail_block,
+        detail_section,
     ]
 
     if review_row["review_text"]:
