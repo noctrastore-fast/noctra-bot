@@ -290,6 +290,12 @@ class RuntimeSettings:
     async def review_card_emoji_product(self) -> str:
         return str(await self._get("review_card_emoji_product", "\U0001F4E6"))
 
+    async def review_card_emoji_rating(self) -> str:
+        """Emoji di DEPAN label 'Rating' -- beda dari
+        review_card_emoji_star_filled/_star_empty di bawah, yang itu buat
+        ngisi baris bintangnya sendiri."""
+        return str(await self._get("review_card_emoji_rating", "\u2b50"))
+
     async def review_card_emoji_star_filled(self) -> str:
         return str(await self._get("review_card_emoji_star_filled", "\u2b50"))
 

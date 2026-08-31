@@ -68,6 +68,7 @@ async def post_review_publicly(bot, review_id: int) -> bool:
         emoji_title=await runtime.review_card_emoji_title(),
         emoji_user=await runtime.review_card_emoji_user(),
         emoji_product=await runtime.review_card_emoji_product(),
+        emoji_rating=await runtime.review_card_emoji_rating(),
         emoji_star_filled=await runtime.review_card_emoji_star_filled(),
         emoji_star_empty=await runtime.review_card_emoji_star_empty(),
         emoji_message=await runtime.review_card_emoji_message(),
