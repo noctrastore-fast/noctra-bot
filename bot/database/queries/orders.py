@@ -93,6 +93,17 @@ async def set_ticket_channel(db: Database, order_id: int, channel_id: int) -> No
     )
 
 
+async def set_payment_proof_url(db: Database, order_id: int, url: str) -> None:
+    """Simpen URL screenshot bukti transfer yang customer kirim lewat DM
+    (lihat bot.utils.order_actions.forward_to_staff) -- dipake belakangan
+    pas order ditandain completed buat notifikasi "Testi Money" (lihat
+    bot.utils.order_actions.mark_completed), jadi gak perlu customer
+    kirim bukti/foto lagi cuma buat itu."""
+    await db.execute(
+        "UPDATE orders SET payment_proof_url = ? WHERE id = ?", (url, order_id)
+    )
+
+
 async def clear_stock_reserved(db: Database, order_id: int) -> None:
     await db.execute("UPDATE orders SET stock_reserved = 0 WHERE id = ?", (order_id,))
 
