@@ -242,3 +242,102 @@ def welcome_container(
         children.append(discord.ui.TextDisplay(f"-# {footer_text}"))
 
     return discord.ui.Container(*children, accent_colour=color)
+
+
+# -- Review publik & bukti foto -------------------------------------------------
+
+def review_card_container(
+    review_row,
+    product_row,
+    author_display: str,
+    emoji_title: str,
+    emoji_user: str,
+    emoji_product: str,
+    emoji_star_filled: str,
+    emoji_star_empty: str,
+    emoji_message: str,
+    author_avatar_url: str | None = None,
+    banner_url: str | None = None,
+    verified: bool = True,
+) -> discord.ui.Container:
+    """Kartu review publik yang diposting ke /settings reviews_channel abis
+    staff approve -- ini social proof/reputasi toko, jadi didesain buat
+    dibaca cepet: judul tebal + baris User/Product/Rating masing-masing
+    pake emoji custom di depannya (bukan field embed klasik). Emoji-nya
+    diatur staff lewat /settings review_emoji, sekali ganti kepake di semua
+    kartu review berikutnya (bukan per-review)."""
+    header_text = discord.ui.TextDisplay(f"## {emoji_title} REVIEW BARU #{review_row['id']}")
+    header = (
+        discord.ui.Section(header_text, accessory=discord.ui.Thumbnail(media=author_avatar_url))
+        if author_avatar_url
+        else header_text
+    )
+
+    stars = emoji_star_filled * review_row["rating"] + emoji_star_empty * (5 - review_row["rating"])
+    detail_block = discord.ui.TextDisplay(
+        f"{emoji_user} **User** : {author_display}\n"
+        f"{emoji_product} **Product** : {product_row['name']}\n"
+        f"{emoji_star_filled} **Rating** : {stars}"
+    )
+
+    children: list = [
+        header,
+        discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small),
+        detail_block,
+    ]
+
+    if review_row["review_text"]:
+        children.append(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
+        children.append(discord.ui.TextDisplay(f"{emoji_message} **Pesan**\n> {review_row['review_text']}"))
+
+    # Beda dari author_avatar_url (thumbnail kecil di header): ini foto
+    # BESAR full-width, diambil dari foto yang customer kirim sendiri kalau
+    # ada, fallback ke banner default staff (/settings review_banner_image)
+    # kalau enggak.
+    banner = review_row["image_url"] or banner_url
+    if banner:
+        children.append(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
+        children.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner)))
+
+    children.append(discord.ui.Separator(visible=False))
+    badge = "Pembelian Terverifikasi" if verified else "Belum Terverifikasi"
+    children.append(discord.ui.TextDisplay(_footer_line(badge)))
+
+    return discord.ui.Container(*children, accent_colour=COLOR_PRIMARY)
+
+
+def testi_proof_container(
+    buyer_display: str,
+    product_name: str,
+    price_text: str,
+    testi_number: int,
+    photo_url: str,
+    emoji_title: str,
+    emoji_buyer: str,
+    emoji_product: str,
+    emoji_price: str,
+    emoji_testi: str,
+) -> discord.ui.Container:
+    """Notifikasi INTERNAL buat staff begitu foto bukti review masuk lewat
+    DM (lihat bot.cogs.review_photo) -- BEDA dari review_card_container di
+    atas yang showcase publik nunggu approve dulu; ini langsung kekirim ke
+    channel staff (/settings testi_proof_channel) pas fotonya baru aja
+    masuk, biar staff bisa langsung cross-check tanpa nunggu approval
+    flow. Foto-nya WAJIB ada (caller yang mastiin sebelum manggil ini)."""
+    header = discord.ui.TextDisplay(f"## {emoji_title} TESTI MONEY")
+
+    detail_block = discord.ui.TextDisplay(
+        f"{emoji_buyer} **Buyer** : {buyer_display}\n"
+        f"{emoji_product} **Product** : {product_name}\n"
+        f"{emoji_price} **Price** : {price_text}\n"
+        f"{emoji_testi} **Testi** : #{testi_number}"
+    )
+    detail_section = discord.ui.Section(detail_block, accessory=discord.ui.Thumbnail(media=photo_url))
+
+    container = discord.ui.Container(
+        header,
+        discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small),
+        detail_section,
+        accent_colour=COLOR_PRIMARY,
+    )
+    return container

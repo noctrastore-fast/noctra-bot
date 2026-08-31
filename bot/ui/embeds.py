@@ -288,6 +288,9 @@ def ticket_closed_embed(close_reason: str | None, closed_by: str) -> discord.Emb
 
 
 # -- Review ---------------------------------------------------------------------
+# review_card_embed() di bawah ini UDAH GAK DIPAKE lagi -- kartu review publik
+# sekarang dirender pake Components V2, lihat bot.ui.components.review_card_container().
+# Ditinggalin di sini (bukan dihapus) buat jaga-jaga ada kode lain yang masih manggil.
 
 def review_card_embed(
     review_row,
