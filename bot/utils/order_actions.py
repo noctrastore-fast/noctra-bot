@@ -19,7 +19,7 @@ from bot.database.queries import payments as payments_q
 from bot.database.queries import products as products_q
 from bot.database.queries import reviews as reviews_q
 from bot.ui import components, embeds
-from bot.utils.helpers import RuntimeSettings
+from bot.utils.helpers import RuntimeSettings, format_price
 
 
 async def _notify_customer(
@@ -74,6 +74,14 @@ async def forward_to_staff(
     siapa yang bayar buat apa tanpa customer perlu buka ticket. Return
     False kalau channel order-log belum diatur."""
     db = bot.db
+
+    if attachment_urls:
+        # Disimpen ke order duluan, LEPAS dari channel order-log udah
+        # diatur apa belum -- ini yang dipake belakangan pas order
+        # completed buat notif "Testi Money" (lihat mark_completed),
+        # independen dari forward ke staff di bawah berhasil apa enggak.
+        await orders_q.set_payment_proof_url(db, order_id, attachment_urls[0])
+
     runtime = RuntimeSettings(db)
     log_channel_id = await runtime.order_log_channel_id()
     if not log_channel_id:
@@ -165,6 +173,62 @@ async def _post_purchase_announcement(bot, order, product) -> None:
         logger.exception("Gagal posting pengumuman pembelian buat order #%s.", order["id"])
 
 
+async def _notify_testi_proof(bot, order, product) -> None:
+    """Notifikasi internal ke staff pake bukti transfer yang customer
+    kirim duluan pas checkout (URL-nya disimpen forward_to_staff() di
+    atas) -- dikirim ke /settings testi_proof_channel begitu order
+    ditandain completed. SENGAJA gak nyangkut ke review sama sekali (beda
+    dari review_card_container yang nunggu customer submit + staff
+    approve review dulu), biar gak dobel kayak sebelumnya. Diem-diem gak
+    ngapa-ngapain kalau proof-nya emang gak ada (order completed tanpa DM
+    bukti bayar, misal staff mark paid manual) atau channel-nya belum
+    diatur -- ini pemanis, bukan sesuatu yang boleh nge-block alur
+    completion order."""
+    proof_url = order["payment_proof_url"]
+    if not proof_url or not product:
+        return
+
+    db = bot.db
+    runtime = RuntimeSettings(db)
+    channel_id = await runtime.testi_proof_channel_id()
+    if not channel_id:
+        return
+    channel = bot.get_channel(channel_id)
+    if not isinstance(channel, discord.TextChannel):
+        return
+
+    try:
+        user = bot.get_user(order["user_id"]) or await bot.fetch_user(order["user_id"])
+        buyer_display = user.mention
+    except discord.HTTPException:
+        buyer_display = f"User {order['user_id']}"
+
+    price_text = format_price(order["total_price"], order["currency_label"])
+    container = components.testi_proof_container(
+        buyer_display=buyer_display,
+        product_name=product["name"],
+        price_text=price_text,
+        testi_number=order["id"],
+        photo_url=proof_url,
+        emoji_title=await runtime.testi_proof_emoji_title(),
+        emoji_buyer=await runtime.testi_proof_emoji_buyer(),
+        emoji_product=await runtime.testi_proof_emoji_product(),
+        emoji_price=await runtime.testi_proof_emoji_price(),
+        emoji_testi=await runtime.testi_proof_emoji_testi(),
+    )
+    try:
+        # allowed_mentions=none() SENGAJA -- buyer_display pake user.mention
+        # biar tampil kayak chip mention di referensi, tapi ini notif ke
+        # STAFF, jadi gak boleh ikut nge-ping customer-nya di channel
+        # internal ini.
+        await channel.send(
+            view=components.NoctraLayout(container, timeout=None),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+    except discord.HTTPException:
+        logger.exception("Gagal posting notifikasi Testi Money buat order #%s.", order["id"])
+
+
 async def mark_paid(bot, order_id: int) -> tuple[bool, str]:
     db = bot.db
     order = await orders_q.get_order(db, order_id)
@@ -248,6 +312,13 @@ async def mark_completed(bot, order_id: int) -> tuple[bool, str]:
         await _post_purchase_announcement(bot, order, product)
     except Exception:  # noqa: BLE001
         logger.warning("Pengumuman pembelian gagal diem-diem abis order #%s.", order_id)
+
+    # Notif "Testi Money" ke staff pake bukti transfer yang udah kesimpen,
+    # kalau ada. Sama-sama non-blocking kayak pengumuman pembelian di atas.
+    try:
+        await _notify_testi_proof(bot, order, product)
+    except Exception:  # noqa: BLE001
+        logger.warning("Notifikasi Testi Money gagal diem-diem abis order #%s.", order_id)
 
     # Refresh gambar leaderboard -- import lazy, fire-and-forget.
     try:
