@@ -1058,6 +1058,72 @@ class ReviewStartButton(
 # KARTU DIGITAL (panel persistent + modal nominal + tombol approve staff)
 # ============================================================================
 
+async def _create_card_request_and_notify(
+    db, dm_channel: discord.DMChannel, user: discord.abc.User, kind: str,
+    amount: float, admin_fee: float, payment,
+) -> None:
+    """Bikin row card_requests + kirim instruksi bayar ke DM -- dipake
+    bareng, entah metode bayarnya cuma satu (langsung kepake) atau customer
+    pilih lewat CardPaymentSelect. Pola embed-nya niru finalize_order() di
+    alur checkout produk biasa (ringkasan + instruksi bayar + "kirim
+    bukti")."""
+    request_id = await cards_q.create_request(db, user.id, kind, amount, admin_fee)
+    currency = await RuntimeSettings(db).default_currency()
+
+    lines = [f"Permintaan kamu (`#{request_id}`) udah dicatet -- **{format_price(amount, currency)}**."]
+    if kind == "create":
+        lines.append(
+            f"Biaya admin pembuatan kartu: {format_price(admin_fee, currency)} "
+            f"(Credit yang bakal masuk: {format_price(amount - admin_fee, currency)})."
+        )
+    reply_embeds = [embeds.info_embed("Permintaan Kartu Dibuat", "\n".join(lines))]
+    if payment["instructions"] or payment["image_url"]:
+        reply_embeds.append(
+            embeds.info_embed(
+                f"Pembayaran -- {payment['name']}",
+                payment["instructions"] or "Scan QR code di bawah buat bayar.",
+                image_url=payment["image_url"],
+            )
+        )
+    reply_embeds.append(
+        embeds.info_embed(
+            "Udah Bayar?",
+            "Kalau udah bayar, kirim bukti bayarnya (screenshot juga oke) langsung di DM ini -- "
+            "bakal otomatis diterusin ke staff.",
+        )
+    )
+    await dm_channel.send(embeds=reply_embeds)
+
+
+class CardPaymentSelect(discord.ui.Select):
+    def __init__(self, kind: str, amount: float, admin_fee: float, methods: list) -> None:
+        self.kind = kind
+        self.amount = amount
+        self.admin_fee = admin_fee
+        self.method_map = {str(m["id"]): m for m in methods}
+        options = [
+            discord.SelectOption(label=m["name"][:100], value=str(m["id"]))
+            for m in methods[:MAX_SELECT_OPTIONS]
+        ]
+        super().__init__(placeholder="Pilih metode pembayaran...", options=options, min_values=1, max_values=1)
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        db = interaction.client.db  # type: ignore[attr-defined]
+        payment = self.method_map[self.values[0]]
+        await _create_card_request_and_notify(
+            db, interaction.channel, interaction.user, self.kind, self.amount, self.admin_fee, payment
+        )
+        await interaction.response.edit_message(
+            embed=embeds.success_embed("Metode pembayaran dipilih -- cek instruksi di atas."), view=None
+        )
+
+
+class CardPaymentSelectView(discord.ui.View):
+    def __init__(self, kind: str, amount: float, admin_fee: float, methods: list) -> None:
+        super().__init__(timeout=180)
+        self.add_item(CardPaymentSelect(kind, amount, admin_fee, methods))
+
+
 class CardCreateModal(discord.ui.Modal, title="Buat Kartu NOCTRA"):
     def __init__(self, on_submit_callback) -> None:
         super().__init__(timeout=300)
@@ -1191,19 +1257,45 @@ class CardPanelView(discord.ui.LayoutView):
             )
             return
 
-        request_id = await cards_q.create_request(db, interaction.user.id, kind, amount, admin_fee)
-        lines = [f"Permintaan kamu (`#{request_id}`) udah dicatet -- **{format_price(amount, currency)}**."]
-        if kind == "create":
-            lines.append(
-                f"Biaya admin pembuatan kartu: {format_price(admin_fee, currency)} "
-                f"(Credit yang bakal masuk: {format_price(amount - admin_fee, currency)})."
+        methods = await payments_q.list_payment_methods(db, enabled_only=True)
+        if not methods:
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Belum ada metode pembayaran yang diatur. Hubungin staff ya."),
+                ephemeral=True,
             )
-        lines.append(
-            "\nSekarang kirim **screenshot bukti transfer** kamu ke DM ini (kirim aja kayak chat biasa, "
-            "gak perlu command) -- staff bakal cek dan approve abis itu."
-        )
+            return
+
+        # Sisanya (pilih metode bayar, instruksi, minta bukti transfer)
+        # pindah ke DM -- sama persis pola alur checkout produk biasa
+        # (lihat start_purchase), soalnya customer bakal balesin lampiran
+        # gambar abis ini, dan itu emang ditangkep listener DM
+        # (bot.cogs.card), bukan lewat interaction ephemeral.
+        try:
+            dm_channel = await interaction.user.create_dm()
+        except discord.HTTPException:
+            dm_channel = None
+
+        if dm_channel is None:
+            await interaction.response.send_message(
+                embed=embeds.error_embed(
+                    "Gak bisa kirim DM ke kamu. Aktifin dulu "
+                    '"Allow direct messages from server members" di Privacy Settings '
+                    "server ini, terus coba lagi ya."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        if len(methods) == 1:
+            await _create_card_request_and_notify(
+                db, dm_channel, interaction.user, kind, amount, admin_fee, methods[0]
+            )
+        else:
+            embed = embeds.info_embed("Pilih Metode Pembayaran", "Pilih cara kamu mau bayar.")
+            await dm_channel.send(embed=embed, view=CardPaymentSelectView(kind, amount, admin_fee, methods))
+
         await interaction.response.send_message(
-            embed=embeds.info_embed("Kirim Bukti Transfer", "\n".join(lines)), ephemeral=True
+            embed=embeds.success_embed("Cek DM kamu buat lanjutin ya."), ephemeral=True
         )
 
     async def on_check(self, interaction: discord.Interaction) -> None:
