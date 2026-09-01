@@ -92,6 +92,22 @@ class SettingsCog(commands.Cog):
         )
 
     @settings_group.command(
+        name="card_noctoin_rate",
+        description="Atur rate Noctoins -- berapa rupiah buat dapet 1 (sekaligus buat potongan 1 Noctoin).",
+    )
+    @app_commands.describe(rate="Nominal per 1 Noctoin, misal 10000 (belanja 10rb=1 Noctoin, 1 Noctoin=potongan 10rb)")
+    @staff_only()
+    async def card_noctoin_rate(self, interaction: discord.Interaction, rate: app_commands.Range[float, 1, None]) -> None:
+        await settings_q.set_setting(self.bot.db, "card_noctoin_rate", str(rate))
+        currency = await RuntimeSettings(self.bot.db).default_currency()
+        await interaction.response.send_message(
+            embed=embeds.success_embed(
+                f"Rate Noctoins diatur ke {rate:,.0f} {currency} per 1 Noctoin (dua arah -- dapet & potongan)."
+            ),
+            ephemeral=True,
+        )
+
+    @settings_group.command(
         name="order_log_channel",
         description="Atur channel tempat order baru diposting sama kontrol staff (Mark Paid/Completed/Cancel/Refund).",
     )
@@ -400,6 +416,7 @@ class SettingsCog(commands.Cog):
             "testi_proof_channel_id": await runtime.testi_proof_channel_id(),
             "card_requests_channel_id": await runtime.card_requests_channel_id(),
             "card_admin_fee": await runtime.card_admin_fee(),
+            "card_noctoin_rate": await runtime.card_noctoin_rate(),
             "purchase_feed_channel_id": await runtime.purchase_feed_channel_id(),
             "ad_channel_id": await runtime.ad_channel_id(),
             "main_server_invite_url": await runtime.main_server_invite_url(),
