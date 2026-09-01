@@ -77,6 +77,16 @@ def shop_panel_container(
     return discord.ui.Container(*children, accent_colour=COLOR_PRIMARY)
 
 
+def card_panel_container(title: str, description: str) -> discord.ui.Container:
+    """Isi panel /settings card_panel -- tombol Buat Kartu/Isi Saldo/Cek
+    Saldo ditempel sama CardPanelView (bot.ui.views), builder ini cuma isi
+    teksnya doang, pola sama kayak shop_panel_container."""
+    return discord.ui.Container(
+        discord.ui.TextDisplay(f"## {title}\n{description}"),
+        accent_colour=COLOR_PRIMARY,
+    )
+
+
 # -- Invoice ------------------------------------------------------------------
 
 def invoice_view(

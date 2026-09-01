@@ -20,10 +20,10 @@ channel order-log opsional (`/settings order_log_channel`).
 Persistent views/items (survive restart bot):
   - Custom_id statis, didaftarin lewat `add_view` di setup_hook:
     ShopPanelView, TicketControlView, TicketClaimedView, TicketReopenView,
-    OpenTicketPanelView.
-  - Custom_id dinamis (id order/rating ke-encode di id-nya sendiri),
-    didaftarin lewat `add_dynamic_items` di setup_hook: OrderActionButton,
-    ReviewStartButton.
+    OpenTicketPanelView, CardPanelView.
+  - Custom_id dinamis (id order/rating/request ke-encode di id-nya
+    sendiri), didaftarin lewat `add_dynamic_items` di setup_hook:
+    OrderActionButton, ReviewStartButton, CardRequestActionButton.
 """
 
 from __future__ import annotations
@@ -42,10 +42,11 @@ from bot.database.queries import (
     reviews as reviews_q,
     tickets as tickets_q,
 )
+from bot.database.queries import cards as cards_q
 from bot.ui import components, embeds
 from bot.ui.modals import MessageModal, ReasonModal, ReviewTextModal, collect_dynamic_fields
-from bot.utils import order_actions, ticket_actions
-from bot.utils.helpers import RuntimeSettings, calculate_final_price
+from bot.utils import card_actions, order_actions, ticket_actions
+from bot.utils.helpers import RuntimeSettings, calculate_final_price, format_price
 from bot.utils.permissions import is_staff
 from bot.utils.validators import FieldValidationError, validate_field_value
 
@@ -1051,6 +1052,223 @@ class ReviewStartButton(
             "Kasih Rating Belanjaan Kamu", "Pilih rating dari 1 sampe 5, terus tulis review (opsional)."
         )
         await interaction.response.send_message(embed=embed, view=RatingPromptView(self.order_id), ephemeral=True)
+
+
+# ============================================================================
+# KARTU DIGITAL (panel persistent + modal nominal + tombol approve staff)
+# ============================================================================
+
+class CardCreateModal(discord.ui.Modal, title="Buat Kartu NOCTRA"):
+    def __init__(self, on_submit_callback) -> None:
+        super().__init__(timeout=300)
+        self._on_submit_callback = on_submit_callback
+        self.amount_input = discord.ui.TextInput(
+            label="Nominal Deposit",
+            style=discord.TextStyle.short,
+            placeholder="Contoh: 25000",
+            max_length=12,
+        )
+        self.add_item(self.amount_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await self._on_submit_callback(interaction, self.amount_input.value.strip())
+
+
+class CardTopupModal(discord.ui.Modal, title="Isi Saldo Kartu"):
+    def __init__(self, on_submit_callback) -> None:
+        super().__init__(timeout=300)
+        self._on_submit_callback = on_submit_callback
+        self.amount_input = discord.ui.TextInput(
+            label="Nominal Isi Saldo",
+            style=discord.TextStyle.short,
+            placeholder="Contoh: 50000",
+            max_length=12,
+        )
+        self.add_item(self.amount_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await self._on_submit_callback(interaction, self.amount_input.value.strip())
+
+
+class CardPanelView(discord.ui.LayoutView):
+    """Panel persistent /settings card_panel -- 3 tombol: Buat Kartu, Isi
+    Saldo, Cek Saldo. Custom_id-nya statis (bukan dynamic item) soalnya
+    tombolnya sama persis buat semua orang, cuma yang beda hasilnya
+    berdasarkan siapa yang klik -- sama pola kayak ShopPanelView."""
+
+    def __init__(
+        self,
+        title: str = "Kartu Digital NOCTRA",
+        description: str = "Punya kartu buat belanja lebih gampang -- gak perlu transfer ulang tiap order.",
+    ) -> None:
+        super().__init__(timeout=None)
+        container = components.card_panel_container(title, description)
+
+        create_btn = discord.ui.Button(
+            label="Buat Kartu", style=discord.ButtonStyle.success, custom_id="noctra:card:create"
+        )
+        topup_btn = discord.ui.Button(
+            label="Isi Saldo", style=discord.ButtonStyle.primary, custom_id="noctra:card:topup"
+        )
+        check_btn = discord.ui.Button(
+            label="Cek Saldo", style=discord.ButtonStyle.secondary, custom_id="noctra:card:check"
+        )
+        create_btn.callback = self.on_create
+        topup_btn.callback = self.on_topup
+        check_btn.callback = self.on_check
+
+        container.add_item(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
+        container.add_item(discord.ui.ActionRow(create_btn, topup_btn, check_btn))
+        self.add_item(container)
+
+    async def on_create(self, interaction: discord.Interaction) -> None:
+        db = interaction.client.db  # type: ignore[attr-defined]
+        if await cards_q.get_card_by_user(db, interaction.user.id):
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Kamu udah punya kartu -- pake tombol **Isi Saldo** aja."),
+                ephemeral=True,
+            )
+            return
+        if await cards_q.get_open_request_for_user(db, interaction.user.id):
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Kamu masih punya permintaan yang lagi diproses. Tunggu itu kelar dulu ya."),
+                ephemeral=True,
+            )
+            return
+
+        async def on_amount(inter: discord.Interaction, raw_amount: str) -> None:
+            await self._handle_amount_submit(inter, raw_amount, kind="create")
+
+        await interaction.response.send_modal(CardCreateModal(on_amount))
+
+    async def on_topup(self, interaction: discord.Interaction) -> None:
+        db = interaction.client.db  # type: ignore[attr-defined]
+        if not await cards_q.get_card_by_user(db, interaction.user.id):
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Kamu belum punya kartu -- pake tombol **Buat Kartu** dulu."),
+                ephemeral=True,
+            )
+            return
+        if await cards_q.get_open_request_for_user(db, interaction.user.id):
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Kamu masih punya permintaan yang lagi diproses. Tunggu itu kelar dulu ya."),
+                ephemeral=True,
+            )
+            return
+
+        async def on_amount(inter: discord.Interaction, raw_amount: str) -> None:
+            await self._handle_amount_submit(inter, raw_amount, kind="topup")
+
+        await interaction.response.send_modal(CardTopupModal(on_amount))
+
+    async def _handle_amount_submit(self, interaction: discord.Interaction, raw_amount: str, *, kind: str) -> None:
+        db = interaction.client.db  # type: ignore[attr-defined]
+        # Ngebolehin customer ngetik "25.000" atau "25,000" -- dibersihin
+        # jadi digit doang sebelum divalidasi, biar gak ketolak gara-gara
+        # format pemisah ribuan yang wajar.
+        cleaned = raw_amount.replace(".", "").replace(",", "").strip()
+        if not cleaned.isdigit():
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Nominal harus angka, contoh: 25000."), ephemeral=True
+            )
+            return
+        amount = float(cleaned)
+        if amount <= 0:
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Nominal harus lebih dari 0."), ephemeral=True
+            )
+            return
+
+        runtime = RuntimeSettings(db)
+        currency = await runtime.default_currency()
+        admin_fee = await runtime.card_admin_fee() if kind == "create" else 0.0
+        if kind == "create" and amount <= admin_fee:
+            await interaction.response.send_message(
+                embed=embeds.error_embed(
+                    f"Nominal deposit harus lebih dari biaya admin ({format_price(admin_fee, currency)})."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        request_id = await cards_q.create_request(db, interaction.user.id, kind, amount, admin_fee)
+        lines = [f"Permintaan kamu (`#{request_id}`) udah dicatet -- **{format_price(amount, currency)}**."]
+        if kind == "create":
+            lines.append(
+                f"Biaya admin pembuatan kartu: {format_price(admin_fee, currency)} "
+                f"(Credit yang bakal masuk: {format_price(amount - admin_fee, currency)})."
+            )
+        lines.append(
+            "\nSekarang kirim **screenshot bukti transfer** kamu ke DM ini (kirim aja kayak chat biasa, "
+            "gak perlu command) -- staff bakal cek dan approve abis itu."
+        )
+        await interaction.response.send_message(
+            embed=embeds.info_embed("Kirim Bukti Transfer", "\n".join(lines)), ephemeral=True
+        )
+
+    async def on_check(self, interaction: discord.Interaction) -> None:
+        db = interaction.client.db  # type: ignore[attr-defined]
+        card = await cards_q.get_card_by_user(db, interaction.user.id)
+        if not card:
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Kamu belum punya kartu -- pake tombol **Buat Kartu** dulu."),
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        file = await card_actions.build_card_file(interaction.client, interaction.user.id, card)
+        await interaction.followup.send(file=file, ephemeral=True)
+
+
+class CardRequestActionButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"noctra:cardreq:(?P<action>approve|reject):(?P<request_id>[0-9]+)",
+):
+    """Tombol approve/reject permintaan kartu digital (bikin baru / isi
+    saldo) di channel /settings card_requests_channel. Trik custom_id
+    restart-safe sama kayak OrderActionButton."""
+
+    LABELS = {"approve": "Approve", "reject": "Reject"}
+    STYLES = {"approve": discord.ButtonStyle.success, "reject": discord.ButtonStyle.danger}
+
+    def __init__(self, action: str, request_id: int) -> None:
+        super().__init__(
+            discord.ui.Button(
+                label=self.LABELS[action],
+                style=self.STYLES[action],
+                custom_id=f"noctra:cardreq:{action}:{request_id}",
+            )
+        )
+        self.action = action
+        self.request_id = request_id
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):  # noqa: D102
+        return cls(match["action"], int(match["request_id"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not await is_staff(interaction):
+            await interaction.response.send_message(embed=embeds.error_embed("Khusus staff."), ephemeral=True)
+            return
+
+        if self.action == "approve":
+            await interaction.response.defer(ephemeral=True)
+            ok, message = await card_actions.approve_request(interaction.client, self.request_id)
+            await interaction.followup.send(
+                embed=embeds.success_embed(message) if ok else embeds.error_embed(message), ephemeral=True
+            )
+            return
+
+        request_id = self.request_id
+
+        async def on_reason(inter: discord.Interaction, reason: str) -> None:
+            await inter.response.defer(ephemeral=True)
+            ok, message = await card_actions.reject_request(inter.client, request_id, reason or None)
+            await inter.followup.send(
+                embed=embeds.success_embed(message) if ok else embeds.error_embed(message), ephemeral=True
+            )
+
+        await interaction.response.send_modal(ReasonModal("Reject Permintaan Kartu", on_reason))
 
 
 # ============================================================================
