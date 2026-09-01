@@ -21,6 +21,15 @@ class SettingsCog(commands.Cog):
     settings_group = app_commands.Group(
         name="settings", description="Atur NOCTRA.", guild_only=True
     )
+    # Subgroup terpisah -- Discord ngebatesin maksimal 25 subcommand per
+    # grup, dan settings_group udah deket/lewat batas itu abis nambahin
+    # banyak fitur. Command kartu digital dikumpulin ke sini
+    # (/settings card <sub>) biar settings_group sendiri gak numpuk, dan
+    # ada ruang buat nambah command baru lagi ke depannya tanpa kena limit
+    # yang sama lagi.
+    card_group = app_commands.Group(
+        name="card", description="Atur fitur kartu digital NOCTRA.", parent=settings_group
+    )
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -50,7 +59,7 @@ class SettingsCog(commands.Cog):
         await interaction.channel.send(view=view)
         await interaction.response.send_message(embed=embeds.success_embed("Panel toko udah diposting."), ephemeral=True)
 
-    @settings_group.command(name="card_panel", description="Posting panel Buat Kartu/Isi Saldo/Cek Saldo di channel ini.")
+    @card_group.command(name="panel", description="Posting panel Buat Kartu/Isi Saldo/Cek Saldo di channel ini.")
     @app_commands.describe(
         title="Judul panel",
         description="Isi teks panel",
@@ -68,8 +77,8 @@ class SettingsCog(commands.Cog):
             embed=embeds.success_embed("Panel kartu udah diposting."), ephemeral=True
         )
 
-    @settings_group.command(
-        name="card_requests_channel",
+    @card_group.command(
+        name="requests_channel",
         description="Atur channel tempat permintaan kartu/isi saldo diteruskan buat staff approve.",
     )
     @app_commands.describe(channel="Channel staff buat approve/reject permintaan kartu")
@@ -80,7 +89,7 @@ class SettingsCog(commands.Cog):
             embed=embeds.success_embed(f"Channel permintaan kartu diatur ke {channel.mention}."), ephemeral=True
         )
 
-    @settings_group.command(name="card_admin_fee", description="Atur biaya admin pembuatan kartu (nominal tetap).")
+    @card_group.command(name="admin_fee", description="Atur biaya admin pembuatan kartu (nominal tetap).")
     @app_commands.describe(fee="Nominal biaya admin, misal 5000 -- dipotong sekali doang pas kartu dibuat")
     @staff_only()
     async def card_admin_fee(self, interaction: discord.Interaction, fee: app_commands.Range[float, 0, None]) -> None:
@@ -91,8 +100,8 @@ class SettingsCog(commands.Cog):
             ephemeral=True,
         )
 
-    @settings_group.command(
-        name="card_noctoin_rate",
+    @card_group.command(
+        name="noctoin_rate",
         description="Atur rate Noctoins -- berapa rupiah buat dapet 1 (sekaligus buat potongan 1 Noctoin).",
     )
     @app_commands.describe(rate="Nominal per 1 Noctoin, misal 10000 (belanja 10rb=1 Noctoin, 1 Noctoin=potongan 10rb)")
