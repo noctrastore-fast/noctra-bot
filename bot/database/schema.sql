@@ -156,3 +156,38 @@ CREATE TABLE IF NOT EXISTS panel_reply_buttons (
     reply_text  TEXT NOT NULL,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Kartu digital NOCTRA -- saldo Credit (dari deposit customer, dipake
+-- checkout), Noctoins (didapet dari transaksi bayar pake Credit, bisa jadi
+-- potongan harga), dan Server Points (statistik seberapa sering belanja
+-- pake card, gak bisa di-redeem). card_id itu serial/referensi doang buat
+-- kebutuhan support -- BUKAN kredensial: semua aksi (cek saldo, isi saldo)
+-- selalu ke-tie ke akun Discord yang invoke, bukan berdasarkan ID yang
+-- diketik siapapun (lihat bot.utils.card_actions).
+CREATE TABLE IF NOT EXISTS cards (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL UNIQUE,
+    card_id         TEXT NOT NULL UNIQUE,
+    credit_balance  REAL NOT NULL DEFAULT 0,
+    noctoins        INTEGER NOT NULL DEFAULT 0,
+    server_points   INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Permintaan bikin kartu baru / isi saldo yang nunggu approve staff --
+-- alurnya mirip bot.cogs.payment_proof (customer DM bukti transfer), tapi
+-- kepisah total dari orders soalnya kartu bukan produk. Status:
+-- awaiting_proof (modal disubmit, nunggu customer kirim screenshot) ->
+-- pending (foto masuk, nunggu keputusan staff) -> approved | rejected.
+CREATE TABLE IF NOT EXISTS card_requests (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    kind        TEXT NOT NULL,                    -- create | topup
+    amount      REAL NOT NULL,
+    admin_fee   REAL NOT NULL DEFAULT 0,           -- cuma keisi buat kind=create
+    proof_url   TEXT,
+    status      TEXT NOT NULL DEFAULT 'awaiting_proof',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at TEXT
+);
