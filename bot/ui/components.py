@@ -114,6 +114,8 @@ def invoice_view(
     lines.append(f"**Total Bayar**\n{format_price(order_row['total_price'], order_row['currency_label'])}")
     if payment_row:
         lines.append(f"**Metode Bayar**\n{payment_row['name']}")
+    elif order_row["paid_with_credit"]:
+        lines.append("**Metode Bayar**\nKartu NOCTRA (Saldo Credit)")
     lines.append(f"**Order ID**\n#{order_row['id']}")
     lines.append(f"**Selesai**\n<t:{completed_ts}:f>")
     detail_block = discord.ui.TextDisplay("\n\n".join(lines))

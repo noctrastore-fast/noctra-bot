@@ -415,7 +415,22 @@ async def proceed_to_payment(interaction: discord.Interaction, product, field_va
         await interaction.response.defer(ephemeral=False, thinking=True)
 
     db = interaction.client.db  # type: ignore[attr-defined]
-    methods = await payments_q.list_payment_methods(db, enabled_only=True)
+    methods = list(await payments_q.list_payment_methods(db, enabled_only=True))
+
+    # Opsi "Bayar pakai Kartu" cuma nongol kalau customer PUNYA kartu --
+    # dibikin dict biasa (bukan row payment_methods asli), method_id-nya
+    # sengaja string "credit" (bukan int) biar gampang dibedain di
+    # finalize_order() dari payment_method beneran (yang PK-nya selalu int).
+    card = await cards_q.get_card_by_user(db, interaction.user.id)
+    if card:
+        currency = await RuntimeSettings(db).default_currency()
+        methods.append({
+            "id": "credit",
+            "name": f"Kartu NOCTRA (Saldo: {format_price(card['credit_balance'], currency)})",
+            "instructions": None,
+            "image_url": None,
+            "timeout_minutes": None,
+        })
 
     if not methods:
         await interaction.followup.send(
@@ -458,12 +473,128 @@ class PaymentSelectView(discord.ui.View):
         self.add_item(PaymentSelect(product, field_values, methods))
 
 
+async def _finalize_credit_order(
+    interaction: discord.Interaction, db, product, field_values: list, unit_price: float
+) -> None:
+    """Cabang finalize_order() KHUSUS bayar pake Kartu NOCTRA -- beda dari
+    pembayaran manual yang nunggu bukti transfer + approve staff, order ini
+    LANGSUNG lunas (saldo dipotong di tempat), jadi gak ada langkah "kirim
+    bukti" sama sekali. Noctoins yang customer punya OTOMATIS kepake abis
+    buat motong harga (sesuai batas saldo Noctoin & harga produk), gak ada
+    opsi milih sebagian."""
+    card = await cards_q.get_card_by_user(db, interaction.user.id)
+    if not card:
+        # Race kondisi langka -- kartu kehapus/gak ada pas mereka mencet opsi ini.
+        await interaction.followup.send(
+            embed=embeds.error_embed("Kartu kamu gak ketemu. Coba pilih metode bayar lain."), ephemeral=False
+        )
+        return
+
+    runtime = RuntimeSettings(db)
+    currency = await runtime.default_currency()
+    rate = await runtime.card_noctoin_rate()
+
+    noctoins_used = 0
+    if rate > 0 and card["noctoins"] > 0:
+        max_affordable = int(unit_price // rate)
+        noctoins_used = min(card["noctoins"], max_affordable)
+    discount = noctoins_used * rate
+    final_price = unit_price - discount
+
+    if card["credit_balance"] < final_price:
+        await interaction.followup.send(
+            embed=embeds.error_embed(
+                f"Saldo Credit kamu gak cukup -- butuh {format_price(final_price, currency)}, "
+                f"saldo kamu {format_price(card['credit_balance'], currency)}. Pilih metode bayar lain ya."
+            ),
+            ephemeral=False,
+        )
+        return
+
+    stock_reserved = False
+    if product["stock_type"] == "manual":
+        fresh = await products_q.get_product(db, product["id"])
+        if fresh["stock_quantity"] <= 0:
+            await interaction.followup.send(
+                embed=embeds.error_embed("Yah, produk ini baru aja abis stoknya."), ephemeral=False
+            )
+            return
+        await products_q.adjust_stock(db, product["id"], -1)
+        stock_reserved = True
+
+    await cards_q.deduct_credit(db, interaction.user.id, final_price)
+    if noctoins_used:
+        await cards_q.deduct_noctoins(db, interaction.user.id, noctoins_used)
+
+    order_id = await orders_q.create_order(
+        db, interaction.user.id, product["id"], None, unit_price, product["currency_label"],
+        stock_reserved, None,
+        total_price=final_price, paid_with_credit=True, noctoins_used=noctoins_used,
+    )
+    await orders_q.set_payment_status(db, order_id, "paid")
+
+    for fv in field_values:
+        await orders_q.add_field_value(db, order_id, fv["label"], fv["field_type"], fv["value"])
+
+    order_row = await orders_q.get_order(db, order_id)
+    saved_fields = await orders_q.get_field_values(db, order_id)
+    order_embed = embeds.order_summary_embed(order_row, product, None, saved_fields)
+
+    note = f"Dibayar otomatis pake **Kartu NOCTRA** -- {format_price(final_price, currency)}."
+    if noctoins_used:
+        note += f" ({noctoins_used} Noctoins kepake, potongan {format_price(discount, currency)}.)"
+
+    sent_message = await interaction.followup.send(
+        content="Order kamu udah dibuat dan LUNAS!",
+        embeds=[order_embed, embeds.success_embed(note)],
+        ephemeral=False,
+        wait=True,
+    )
+    await orders_q.add_dm_message(db, order_id, sent_message.channel.id, sent_message.id)
+
+    try:
+        await _notify_staff_credit_order(interaction.client, order_id, product, interaction.user)
+    except Exception:  # noqa: BLE001
+        logger.warning("Notif staff order Credit gagal diem-diem buat order #%s.", order_id)
+
+
+async def _notify_staff_credit_order(bot, order_id: int, product, user: discord.abc.User) -> None:
+    """Order yang dibayar pake Credit LANGSUNG lunas -- beda dari
+    pembayaran manual yang staff tau soal order-nya lewat bukti transfer
+    yang diterusin (bot.utils.order_actions.forward_to_staff). Di sini gak
+    ada bukti buat diterusin, jadi staff perlu dikasih tau manual biar
+    order-nya ketauan dan bisa diproses/fulfill -- dikirim ke channel yang
+    sama kayak forward_to_staff (order_log_channel), biar staff cuma perlu
+    mantengin satu channel buat semua order baru, gak peduli cara bayarnya."""
+    db = bot.db
+    runtime = RuntimeSettings(db)
+    channel_id = await runtime.order_log_channel_id()
+    if not channel_id:
+        return
+    channel = bot.get_channel(channel_id)
+    if not isinstance(channel, discord.TextChannel):
+        return
+    embed = embeds.info_embed(
+        f"Order Baru (LUNAS) -- #{order_id}",
+        f"**{user}** ({user.mention}) baru aja beli **{product['name']}**, dibayar otomatis pake "
+        "Kartu NOCTRA. Order ini udah lunas, tinggal diproses/fulfill.",
+    )
+    try:
+        await channel.send(embed=embed)
+    except discord.HTTPException:
+        pass
+
+
 async def finalize_order(interaction: discord.Interaction, product, field_values: list, payment) -> None:
     if not interaction.response.is_done():
         await interaction.response.defer(ephemeral=False, thinking=True)
 
     db = interaction.client.db  # type: ignore[attr-defined]
     unit_price = calculate_final_price(product["base_price"], product["discount_type"], product["discount_value"])
+
+    if payment["id"] == "credit":
+        await _finalize_credit_order(interaction, db, product, field_values, unit_price)
+        return
 
     stock_reserved = False
     if product["stock_type"] == "manual":

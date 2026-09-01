@@ -157,6 +157,8 @@ def order_summary_embed(
     )
     if payment_row:
         embed.add_field(name="Metode Bayar", value=payment_row["name"], inline=True)
+    elif order_row["paid_with_credit"]:
+        embed.add_field(name="Metode Bayar", value="Kartu NOCTRA (Saldo Credit)", inline=True)
     embed.add_field(
         name="Dipesan",
         value=f"<t:{int(datetime.fromisoformat(order_row['created_at']).timestamp())}:R>",
