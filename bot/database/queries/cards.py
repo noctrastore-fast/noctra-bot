@@ -49,6 +49,17 @@ async def add_rewards(db: Database, user_id: int, noctoins: int, server_points: 
     )
 
 
+async def add_noctoins(db: Database, user_id: int, amount: int) -> None:
+    """Beda dari add_rewards() -- ini dipake buat NGEMBALIIN Noctoins yang
+    sebelumnya kepake (order dibatalin/refund abis bayar pake Kartu
+    NOCTRA), bukan buat ngasih reward baru, jadi server_points SENGAJA
+    gak ikut nambah di sini."""
+    await db.execute(
+        "UPDATE cards SET noctoins = noctoins + ?, updated_at = datetime('now') WHERE user_id = ?",
+        (amount, user_id),
+    )
+
+
 async def deduct_noctoins(db: Database, user_id: int, amount: int) -> None:
     await db.execute(
         "UPDATE cards SET noctoins = noctoins - ?, updated_at = datetime('now') WHERE user_id = ?",

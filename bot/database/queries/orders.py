@@ -19,7 +19,16 @@ async def create_order(
     currency_label: str,
     stock_reserved: bool,
     timeout_minutes: int | None,
+    *,
+    total_price: float | None = None,
+    paid_with_credit: bool = False,
+    noctoins_used: int = 0,
 ) -> int:
+    """`total_price` cuma perlu diisi kalau BEDA dari `unit_price` (misal
+    abis potongan Noctoins pas bayar pake Kartu NOCTRA) -- default-nya
+    sama kayak `unit_price`, jadi caller lama (pembayaran manual) gak
+    perlu berubah sama sekali. `paid_with_credit`/`noctoins_used` juga
+    default ke nilai kosong buat alasan yang sama."""
     deadline = None
     if timeout_minutes:
         deadline = (datetime.utcnow() + timedelta(minutes=timeout_minutes)).isoformat(
@@ -29,12 +38,15 @@ async def create_order(
         """
         INSERT INTO orders
             (user_id, product_id, payment_method_id, unit_price,
-             total_price, currency_label, stock_reserved, payment_deadline)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             total_price, currency_label, stock_reserved, payment_deadline,
+             paid_with_credit, noctoins_used)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user_id, product_id, payment_method_id, unit_price,
-            unit_price, currency_label, int(stock_reserved), deadline,
+            total_price if total_price is not None else unit_price,
+            currency_label, int(stock_reserved), deadline,
+            int(paid_with_credit), noctoins_used,
         ),
     )
 
