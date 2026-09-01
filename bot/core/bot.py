@@ -28,6 +28,7 @@ EXTENSIONS = (
     "bot.cogs.panel",
     "bot.cogs.announcement",
     "bot.cogs.store_status",
+    "bot.cogs.card",
     "bot.cogs.advertisement",
     "bot.cogs.welcome",
     "bot.cogs.backup",
@@ -105,6 +106,7 @@ class NoctraBot(commands.Bot):
             TicketClaimedView,
             TicketControlView,
             TicketReopenView,
+            CardPanelView,
         )
 
         self.add_view(ShopPanelView())
@@ -112,6 +114,7 @@ class NoctraBot(commands.Bot):
         self.add_view(TicketClaimedView())
         self.add_view(TicketReopenView())
         self.add_view(OpenTicketPanelView())
+        self.add_view(CardPanelView())
         logger.info("Persistent views registered.")
 
     def _register_dynamic_items(self) -> None:
@@ -119,10 +122,12 @@ class NoctraBot(commands.Bot):
         # are registered by class, not instance -- discord.py reconstructs
         # the right button on demand whenever a matching custom_id comes in,
         # so this survives restarts with no per-order bookkeeping needed.
-        from bot.ui.views import OrderActionButton, ReplyButton, ReviewStartButton
+        from bot.ui.views import OrderActionButton, ReplyButton, ReviewStartButton, CardRequestActionButton
         from bot.ui.panel_reply_button import PanelReplyButton
 
-        self.add_dynamic_items(OrderActionButton, ReviewStartButton, ReplyButton, PanelReplyButton)
+        self.add_dynamic_items(
+            OrderActionButton, ReviewStartButton, ReplyButton, PanelReplyButton, CardRequestActionButton
+        )
         logger.info("Dynamic items registered.")
 
     async def on_ready(self) -> None:
