@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from bot.database.queries import settings as settings_q
 from bot.ui import embeds
-from bot.ui.views import ShopPanelView
+from bot.ui.views import CardPanelView, ShopPanelView
 from bot.utils.helpers import RuntimeSettings
 from bot.utils.leaderboard import refresh_leaderboard
 from bot.utils.permissions import staff_only
@@ -49,6 +49,47 @@ class SettingsCog(commands.Cog):
         )
         await interaction.channel.send(view=view)
         await interaction.response.send_message(embed=embeds.success_embed("Panel toko udah diposting."), ephemeral=True)
+
+    @settings_group.command(name="card_panel", description="Posting panel Buat Kartu/Isi Saldo/Cek Saldo di channel ini.")
+    @app_commands.describe(
+        title="Judul panel",
+        description="Isi teks panel",
+    )
+    @staff_only()
+    async def card_panel(
+        self,
+        interaction: discord.Interaction,
+        title: str = "Kartu Digital NOCTRA",
+        description: str = "Punya kartu buat belanja lebih gampang -- gak perlu transfer ulang tiap order.",
+    ) -> None:
+        view = CardPanelView(title=title, description=description)
+        await interaction.channel.send(view=view)
+        await interaction.response.send_message(
+            embed=embeds.success_embed("Panel kartu udah diposting."), ephemeral=True
+        )
+
+    @settings_group.command(
+        name="card_requests_channel",
+        description="Atur channel tempat permintaan kartu/isi saldo diteruskan buat staff approve.",
+    )
+    @app_commands.describe(channel="Channel staff buat approve/reject permintaan kartu")
+    @staff_only()
+    async def card_requests_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
+        await settings_q.set_setting(self.bot.db, "card_requests_channel_id", str(channel.id))
+        await interaction.response.send_message(
+            embed=embeds.success_embed(f"Channel permintaan kartu diatur ke {channel.mention}."), ephemeral=True
+        )
+
+    @settings_group.command(name="card_admin_fee", description="Atur biaya admin pembuatan kartu (nominal tetap).")
+    @app_commands.describe(fee="Nominal biaya admin, misal 5000 -- dipotong sekali doang pas kartu dibuat")
+    @staff_only()
+    async def card_admin_fee(self, interaction: discord.Interaction, fee: app_commands.Range[float, 0, None]) -> None:
+        await settings_q.set_setting(self.bot.db, "card_admin_fee", str(fee))
+        currency = await RuntimeSettings(self.bot.db).default_currency()
+        await interaction.response.send_message(
+            embed=embeds.success_embed(f"Biaya admin pembuatan kartu diatur ke {fee:,.0f} {currency}."),
+            ephemeral=True,
+        )
 
     @settings_group.command(
         name="order_log_channel",
@@ -357,6 +398,8 @@ class SettingsCog(commands.Cog):
             "order_log_channel_id": await runtime.order_log_channel_id(),
             "reviews_channel_id": await runtime.reviews_channel_id(),
             "testi_proof_channel_id": await runtime.testi_proof_channel_id(),
+            "card_requests_channel_id": await runtime.card_requests_channel_id(),
+            "card_admin_fee": await runtime.card_admin_fee(),
             "purchase_feed_channel_id": await runtime.purchase_feed_channel_id(),
             "ad_channel_id": await runtime.ad_channel_id(),
             "main_server_invite_url": await runtime.main_server_invite_url(),
