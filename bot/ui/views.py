@@ -550,39 +550,30 @@ async def _finalize_credit_order(
         ephemeral=False,
         wait=True,
     )
-    await orders_q.add_dm_message(db, order_id, sent_message.channel.id, sent_message.id)
+    if sent_message is not None:
+        await orders_q.add_dm_message(db, order_id, sent_message.channel.id, sent_message.id)
 
-    try:
-        await _notify_staff_credit_order(interaction.client, order_id, product, interaction.user)
-    except Exception:  # noqa: BLE001
-        logger.warning("Notif staff order Credit gagal diem-diem buat order #%s.", order_id)
-
-
-async def _notify_staff_credit_order(bot, order_id: int, product, user: discord.abc.User) -> None:
-    """Order yang dibayar pake Credit LANGSUNG lunas -- beda dari
-    pembayaran manual yang staff tau soal order-nya lewat bukti transfer
-    yang diterusin (bot.utils.order_actions.forward_to_staff). Di sini gak
-    ada bukti buat diterusin, jadi staff perlu dikasih tau manual biar
-    order-nya ketauan dan bisa diproses/fulfill -- dikirim ke channel yang
-    sama kayak forward_to_staff (order_log_channel), biar staff cuma perlu
-    mantengin satu channel buat semua order baru, gak peduli cara bayarnya."""
-    db = bot.db
-    runtime = RuntimeSettings(db)
-    channel_id = await runtime.order_log_channel_id()
-    if not channel_id:
-        return
-    channel = bot.get_channel(channel_id)
-    if not isinstance(channel, discord.TextChannel):
-        return
-    embed = embeds.info_embed(
-        f"Order Baru (LUNAS) -- #{order_id}",
-        f"**{user}** ({user.mention}) baru aja beli **{product['name']}**, dibayar otomatis pake "
-        "Kartu NOCTRA. Order ini udah lunas, tinggal diproses/fulfill.",
-    )
-    try:
-        await channel.send(embed=embed)
-    except discord.HTTPException:
-        pass
+    # Kabarin staff lewat channel order-log -- pola SAMA PERSIS kayak
+    # finalize_order() manual (embed lengkap + field checkout + tombol
+    # aksi), BUKAN embed simpel doang, biar staff dapet pengalaman yang
+    # sama gak peduli cara bayarnya. Bedanya cuma gak ada tombol Mark Paid
+    # (order ini emang udah lunas dari awal).
+    log_channel_id = await runtime.order_log_channel_id()
+    if log_channel_id:
+        log_channel = interaction.client.get_channel(log_channel_id)
+        if isinstance(log_channel, discord.TextChannel):
+            staff_embed = embeds.order_summary_embed(order_row, product, None, saved_fields)
+            staff_embed.add_field(
+                name="Customer", value=f"<@{interaction.user.id}> ({interaction.user})", inline=False
+            )
+            staff_view = discord.ui.View(timeout=None)
+            for action in ("mark_completed", "cancel", "refund"):
+                staff_view.add_item(OrderActionButton(action, order_id))
+            staff_view.add_item(ReplyButton(order_id))
+            try:
+                await log_channel.send(embed=staff_embed, view=staff_view)
+            except discord.HTTPException:
+                logger.exception("Gagal posting order Kartu #%s ke channel order-log.", order_id)
 
 
 async def finalize_order(interaction: discord.Interaction, product, field_values: list, payment) -> None:
