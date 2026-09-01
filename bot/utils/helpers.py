@@ -277,6 +277,24 @@ class RuntimeSettings:
         value = await self._get("store_status_thumbnail_url", None)
         return value or None
 
+    # -- Kartu digital (/card, /settings card_*) --------------------------------
+
+    async def card_requests_channel_id(self) -> int | None:
+        """Channel tempat permintaan bikin kartu/isi saldo diteruskan buat
+        staff approve/reject -- diatur lewat /settings card_requests_channel."""
+        value = await self._get("card_requests_channel_id", None)
+        return int(value) if value else None
+
+    async def card_admin_fee(self) -> float:
+        """Biaya admin pembuatan kartu -- nominal TETAP (bukan persenan),
+        dipotong sekali doang pas kartu dibuat, gak kepake lagi pas isi
+        saldo berikutnya. Default 5000, diatur lewat /settings card_admin_fee."""
+        value = await self._get("card_admin_fee", "5000")
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 5000.0
+
     # -- Kartu review publik (/settings review_emoji) --------------------------
     # Dipake components.review_card_container() -- diposting ke
     # /settings reviews_channel abis staff approve review.
