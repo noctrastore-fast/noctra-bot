@@ -13,6 +13,7 @@ from __future__ import annotations
 import discord
 
 from bot.core.logger import logger
+from bot.database.queries import cards as cards_q
 from bot.database.queries import category_types as category_types_q
 from bot.database.queries import orders as orders_q
 from bot.database.queries import payments as payments_q
@@ -257,6 +258,8 @@ async def mark_completed(bot, order_id: int) -> tuple[bool, str]:
     if not order:
         return False, "Order gak ketemu."
 
+    runtime = RuntimeSettings(db)
+
     await orders_q.set_order_status(db, order_id, "completed")
     if order["payment_status"] != "paid":
         # Order yang selesai otomatis berarti udah lunas -- tanpa ini,
@@ -320,6 +323,24 @@ async def mark_completed(bot, order_id: int) -> tuple[bool, str]:
     except Exception:  # noqa: BLE001
         logger.warning("Notifikasi Testi Money gagal diem-diem abis order #%s.", order_id)
 
+    # Kasih Noctoins + Server Points kalau order ini dibayar pake Kartu
+    # NOCTRA (BUKAN transfer manual) -- sesuai desain fitur kartu digital.
+    # Dihitung dari total_price yang BENERAN kebayar (abis potongan
+    # Noctoins kalau dipake), bukan harga sebelum diskon, biar gak ada
+    # celah "pake Noctoins buat diskon gede tapi tetep dapet Noctoins dari
+    # harga asli". CATATAN: kalau order yang UDAH completed ini nanti
+    # di-refund/cancel, Noctoins/Points yang kadung dikasih di sini GAK
+    # ditarik balik -- lihat cancel_order/refund_order di bawah.
+    if order["paid_with_credit"]:
+        try:
+            rate = await runtime.card_noctoin_rate()
+            if rate > 0:
+                earned = int(order["total_price"] // rate)
+                if earned > 0:
+                    await cards_q.add_rewards(db, order["user_id"], earned, earned)
+        except Exception:  # noqa: BLE001
+            logger.warning("Ngasih Noctoins/Server Points gagal diem-diem abis order #%s.", order_id)
+
     # Refresh gambar leaderboard -- import lazy, fire-and-forget.
     try:
         from bot.utils.leaderboard import refresh_leaderboard
@@ -341,6 +362,20 @@ async def cancel_order(bot, order_id: int, reason: str | None) -> tuple[bool, st
     if order["stock_reserved"]:
         await products_q.adjust_stock(db, order["product_id"], 1)
         await orders_q.clear_stock_reserved(db, order_id)
+
+    # Order yang dibayar pake Kartu NOCTRA udah LANGSUNG lunas (saldo
+    # dipotong di tempat pas checkout) -- beda dari pembayaran manual yang
+    # "batal" ya emang gak pernah beneran bayar. Di sini duitnya udah
+    # ke-ambil, jadi WAJIB dibalikin. Noctoins yang kepake juga dibalikin
+    # (bukan add_rewards -- itu buat ngasih reward baru, ini cuma
+    # ngembaliin yang sempet kepake, server_points SENGAJA gak ikut).
+    if order["paid_with_credit"]:
+        try:
+            await cards_q.add_credit(db, order["user_id"], order["total_price"])
+            if order["noctoins_used"]:
+                await cards_q.add_noctoins(db, order["user_id"], order["noctoins_used"])
+        except Exception:  # noqa: BLE001
+            logger.warning("Refund saldo Credit gagal diem-diem abis batalin order #%s.", order_id)
 
     text = f"Order kamu #{order_id} udah **dibatalin**."
     if reason:
@@ -371,6 +406,16 @@ async def refund_order(bot, order_id: int, reason: str | None) -> tuple[bool, st
     if order["stock_reserved"]:
         await products_q.adjust_stock(db, order["product_id"], 1)
         await orders_q.clear_stock_reserved(db, order_id)
+
+    # Sama kayak cancel_order -- kalau ini order Kartu NOCTRA, duitnya udah
+    # ke-ambil di depan, jadi WAJIB dibalikin (plus Noctoins yang kepake).
+    if order["paid_with_credit"]:
+        try:
+            await cards_q.add_credit(db, order["user_id"], order["total_price"])
+            if order["noctoins_used"]:
+                await cards_q.add_noctoins(db, order["user_id"], order["noctoins_used"])
+        except Exception:  # noqa: BLE001
+            logger.warning("Refund saldo Credit gagal diem-diem abis refund order #%s.", order_id)
 
     text = f"Order kamu #{order_id} udah **di-refund**."
     if reason:

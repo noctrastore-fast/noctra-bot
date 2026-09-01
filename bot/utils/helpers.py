@@ -295,6 +295,18 @@ class RuntimeSettings:
         except (TypeError, ValueError):
             return 5000.0
 
+    async def card_noctoin_rate(self) -> float:
+        """Satu rate buat DUA arah: berapa rupiah belanja (pake Kartu
+        NOCTRA) buat dapet 1 Noctoin, SEKALIGUS berapa rupiah potongan
+        harga per 1 Noctoin yang dipake. Default 10000 (belanja 10rb dapet
+        1 Noctoin, 1 Noctoin motong harga 10rb), diatur lewat
+        /settings card_noctoin_rate."""
+        value = await self._get("card_noctoin_rate", "10000")
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 10000.0
+
     # -- Kartu review publik (/settings review_emoji) --------------------------
     # Dipake components.review_card_container() -- diposting ke
     # /settings reviews_channel abis staff approve review.
