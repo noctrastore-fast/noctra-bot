@@ -7,6 +7,10 @@ screenshot-nya sebagai pesan DM biasa, dan listener ini yang nangkep.
 Approve/reject-nya sendiri ada di tombol CardRequestActionButton (lihat
 bot.ui.views), yang manggil bot.utils.card_actions -- file ini cuma
 ngurusin sisi "nangkep foto dari customer, terusin ke staff".
+
+Order produk (bot.cogs.payment_proof) SELALU menang kalau customer
+kebetulan punya order aktif yang nunggu bukti bayar BARENGAN sama
+permintaan kartu yang nunggu bukti juga -- lihat komen di on_message.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ import discord
 from discord.ext import commands
 
 from bot.database.queries import cards as cards_q
+from bot.database.queries import orders as orders_q
 from bot.ui import embeds
 from bot.utils.helpers import RuntimeSettings, format_price
 
@@ -39,6 +44,20 @@ class CardCog(commands.Cog):
         if not image_attachment:
             # Mereka lagi ngobrol soal hal lain -- jangan dianggep "gak ada
             # bukti" dan dilewatin, tunggu aja sampe ada gambar beneran.
+            return
+
+        # Kalau customer JUGA punya order produk aktif yang nunggu bukti
+        # bayar, gambar ini AMBIGU -- bot.cogs.payment_proof punya listener
+        # sendiri yang bakal nangkep gambar yang sama ini juga (Discord
+        # dispatch on_message ke SEMUA listener, gak cuma satu). Order
+        # produk menang duluan di sini (mundur, gak ikut diproses) biar gak
+        # dobel notif ke dua channel staff sekaligus buat satu gambar yang
+        # sama. Konsekuensinya: kalau customer emang niat kirim bukti buat
+        # kartu tapi kebetulan masih punya order lama yang nyangkut belum
+        # kebayar, mereka perlu beresin/batalin order itu dulu (atau minta
+        # staff bantu manual) sebelum bukti kartu-nya kebaca di sini.
+        active_orders = await orders_q.list_active_orders_for_user(db, message.author.id)
+        if any(o["payment_status"] == "pending" for o in active_orders):
             return
 
         await cards_q.set_request_proof(db, request["id"], image_attachment.url)
