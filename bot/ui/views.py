@@ -866,6 +866,26 @@ class TicketClaimedView(discord.ui.View):
 # AKSI ORDER (persistent, dinamis -- diposting di channel order-log)
 # ============================================================================
 
+async def _disable_message_buttons(message: discord.Message, *, only_custom_id: str | None = None) -> None:
+    """Disable tombol di pesan order-log abis staff nanganin -- biar
+    keliatan jelas dari sekilas pandang order mana yang udah diproses vs
+    yang masih nunggu (dulu tombolnya tetep bisa diklik terus walau order
+    udah kelar, bikin bingung). `only_custom_id` (kalau diisi) cuma
+    disable SATU tombol spesifik itu doang -- dipake abis Mark Paid,
+    soalnya order-nya sendiri masih lanjut diproses (belum final). Kosongin
+    buat disable SEMUA tombol -- dipake abis aksi final: Mark Completed,
+    Cancel, Refund."""
+    view = discord.ui.View.from_message(message, timeout=None)
+    for item in view.children:
+        if isinstance(item, discord.ui.Button):
+            if only_custom_id is None or item.custom_id == only_custom_id:
+                item.disabled = True
+    try:
+        await message.edit(view=view)
+    except discord.HTTPException:
+        pass
+
+
 class OrderActionButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"noctra:order:(?P<action>mark_paid|mark_completed|cancel|refund):(?P<order_id>[0-9]+)",
@@ -915,12 +935,23 @@ class OrderActionButton(
             await interaction.response.defer(ephemeral=True)
             func = order_actions.mark_paid if self.action == "mark_paid" else order_actions.mark_completed
             ok, message = await func(interaction.client, self.order_id)
+            if ok and interaction.message is not None:
+                if self.action == "mark_completed":
+                    # Aksi final -- semua tombol di-disable, order-nya udah kelar.
+                    await _disable_message_buttons(interaction.message)
+                else:
+                    # Mark Paid doang -- order-nya masih lanjut (belum
+                    # completed), jadi cuma tombol ini yang di-disable,
+                    # Cancel/Refund/Mark Completed/Reply tetep aktif.
+                    own_custom_id = f"noctra:order:{self.action}:{self.order_id}"
+                    await _disable_message_buttons(interaction.message, only_custom_id=own_custom_id)
             await interaction.followup.send(
                 embed=embeds.success_embed(message) if ok else embeds.error_embed(message), ephemeral=True
             )
             return
 
         action, order_id = self.action, self.order_id
+        order_message = interaction.message
 
         async def on_reason(inter: discord.Interaction, reason: str) -> None:
             await inter.response.defer(ephemeral=True)
@@ -928,6 +959,9 @@ class OrderActionButton(
                 ok, message = await order_actions.cancel_order(inter.client, order_id, reason or None)
             else:
                 ok, message = await order_actions.refund_order(inter.client, order_id, reason or None)
+            if ok and order_message is not None:
+                # Cancel/Refund juga aksi final -- disable semua tombol.
+                await _disable_message_buttons(order_message)
             await inter.followup.send(
                 embed=embeds.success_embed(message) if ok else embeds.error_embed(message), ephemeral=True
             )
