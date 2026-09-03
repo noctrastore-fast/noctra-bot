@@ -934,7 +934,7 @@ class OrderActionButton(
         if self.action in ("mark_paid", "mark_completed"):
             await interaction.response.defer(ephemeral=True)
             func = order_actions.mark_paid if self.action == "mark_paid" else order_actions.mark_completed
-            ok, message = await func(interaction.client, self.order_id)
+            ok, message = await func(interaction.client, self.order_id, interaction.user)
             if ok and interaction.message is not None:
                 if self.action == "mark_completed":
                     # Aksi final -- semua tombol di-disable, order-nya udah kelar.
@@ -956,9 +956,9 @@ class OrderActionButton(
         async def on_reason(inter: discord.Interaction, reason: str) -> None:
             await inter.response.defer(ephemeral=True)
             if action == "cancel":
-                ok, message = await order_actions.cancel_order(inter.client, order_id, reason or None)
+                ok, message = await order_actions.cancel_order(inter.client, order_id, reason or None, inter.user)
             else:
-                ok, message = await order_actions.refund_order(inter.client, order_id, reason or None)
+                ok, message = await order_actions.refund_order(inter.client, order_id, reason or None, inter.user)
             if ok and order_message is not None:
                 # Cancel/Refund juga aksi final -- disable semua tombol.
                 await _disable_message_buttons(order_message)
@@ -1501,7 +1501,7 @@ class CardRequestActionButton(
 
         if self.action == "approve":
             await interaction.response.defer(ephemeral=True)
-            ok, message = await card_actions.approve_request(interaction.client, self.request_id)
+            ok, message = await card_actions.approve_request(interaction.client, self.request_id, interaction.user)
             await interaction.followup.send(
                 embed=embeds.success_embed(message) if ok else embeds.error_embed(message), ephemeral=True
             )
@@ -1511,7 +1511,7 @@ class CardRequestActionButton(
 
         async def on_reason(inter: discord.Interaction, reason: str) -> None:
             await inter.response.defer(ephemeral=True)
-            ok, message = await card_actions.reject_request(inter.client, request_id, reason or None)
+            ok, message = await card_actions.reject_request(inter.client, request_id, reason or None, inter.user)
             await inter.followup.send(
                 embed=embeds.success_embed(message) if ok else embeds.error_embed(message), ephemeral=True
             )
