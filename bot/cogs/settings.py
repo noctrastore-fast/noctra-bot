@@ -9,6 +9,7 @@ from discord.ext import commands
 from bot.database.queries import settings as settings_q
 from bot.ui import embeds
 from bot.ui.views import CardPanelView, ShopPanelView
+from bot.utils import activity_log
 from bot.utils.helpers import RuntimeSettings
 from bot.utils.leaderboard import refresh_leaderboard
 from bot.utils.permissions import staff_only
@@ -88,6 +89,10 @@ class SettingsCog(commands.Cog):
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Channel permintaan kartu diatur ke {channel.mention}."), ephemeral=True
         )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah",
+            f"Channel permintaan kartu diatur ke {channel.mention}.",
+        )
 
     @card_group.command(name="admin_fee", description="Atur biaya admin pembuatan kartu (nominal tetap).")
     @app_commands.describe(fee="Nominal biaya admin, misal 5000 -- dipotong sekali doang pas kartu dibuat")
@@ -98,6 +103,9 @@ class SettingsCog(commands.Cog):
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Biaya admin pembuatan kartu diatur ke {fee:,.0f} {currency}."),
             ephemeral=True,
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Biaya admin pembuatan kartu diatur ke {fee:,.0f} {currency}."
         )
 
     @card_group.command(
@@ -115,6 +123,21 @@ class SettingsCog(commands.Cog):
             ),
             ephemeral=True,
         )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Rate Noctoins diatur ke {rate:,.0f} {currency} per 1 Noctoin."
+        )
+
+    @settings_group.command(
+        name="activity_log_channel",
+        description="Atur channel log aktivitas staff (settings, order, kartu, moderasi review).",
+    )
+    @app_commands.describe(channel="Channel internal buat log aktivitas staff")
+    @staff_only()
+    async def activity_log_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
+        await settings_q.set_setting(self.bot.db, "activity_log_channel_id", str(channel.id))
+        await interaction.response.send_message(
+            embed=embeds.success_embed(f"Channel log aktivitas diatur ke {channel.mention}."), ephemeral=True
+        )
 
     @settings_group.command(
         name="order_log_channel",
@@ -127,6 +150,9 @@ class SettingsCog(commands.Cog):
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Channel order-log diatur ke {channel.mention}."), ephemeral=True
         )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Channel order-log diatur ke {channel.mention}."
+        )
 
     @settings_group.command(
         name="reviews_channel",
@@ -138,6 +164,9 @@ class SettingsCog(commands.Cog):
         await settings_q.set_setting(self.bot.db, "reviews_channel_id", str(channel.id))
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Channel review diatur ke {channel.mention}."), ephemeral=True
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Channel review publik diatur ke {channel.mention}."
         )
 
     @settings_group.command(
@@ -152,9 +181,12 @@ class SettingsCog(commands.Cog):
             embed=embeds.success_embed(f"Channel notifikasi bukti review diatur ke {channel.mention}."),
             ephemeral=True,
         )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Channel notifikasi bukti review diatur ke {channel.mention}."
+        )
 
     async def _update_emoji_settings(
-        self, interaction: discord.Interaction, updates: dict[str, str | None]
+        self, interaction: discord.Interaction, updates: dict[str, str | None], *, log_title: str
     ) -> bool:
         """Helper bareng buat review_emoji & testi_proof_emoji -- validasi
         semua parameter yang diisi dulu SEBELUM nyimpen apapun, biar gak
@@ -167,9 +199,14 @@ class SettingsCog(commands.Cog):
                     embed=embeds.error_embed(f"`{value}` bukan emoji yang valid."), ephemeral=True
                 )
                 return False
-        for key, value in updates.items():
-            if value is not None:
-                await settings_q.set_setting(self.bot.db, key, value)
+        changed = {k: v for k, v in updates.items() if v is not None}
+        for key, value in changed.items():
+            await settings_q.set_setting(self.bot.db, key, value)
+        if changed:
+            await activity_log.log_activity(
+                self.bot, interaction.user, log_title,
+                "\n".join(f"`{k}` -> {v}" for k, v in changed.items()),
+            )
         return True
 
     @settings_group.command(
@@ -208,6 +245,7 @@ class SettingsCog(commands.Cog):
                 "review_card_emoji_star_empty": star_empty,
                 "review_card_emoji_message": message,
             },
+            log_title="Emoji Kartu Review Diubah",
         )
         if ok:
             await interaction.response.send_message(
@@ -244,6 +282,7 @@ class SettingsCog(commands.Cog):
                 "testi_proof_emoji_price": price,
                 "testi_proof_emoji_testi": testi,
             },
+            log_title="Emoji Notif Bukti Review Diubah",
         )
         if ok:
             await interaction.response.send_message(
@@ -262,6 +301,9 @@ class SettingsCog(commands.Cog):
             embed=embeds.success_embed(f"Pengumuman pembelian bakal diposting di {channel.mention}."),
             ephemeral=True,
         )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Channel pengumuman pembelian diatur ke {channel.mention}."
+        )
 
     @settings_group.command(
         name="ad_channel",
@@ -278,6 +320,9 @@ class SettingsCog(commands.Cog):
             ),
             ephemeral=True,
         )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Channel default iklan diatur ke {channel.mention}."
+        )
 
     @settings_group.command(
         name="main_server_invite",
@@ -290,6 +335,7 @@ class SettingsCog(commands.Cog):
         await interaction.response.send_message(
             embed=embeds.success_embed("Link invite server utama udah diatur."), ephemeral=True
         )
+        await activity_log.log_activity(self.bot, interaction.user, "Setting Diubah", "Link invite server utama diubah.")
 
     @settings_group.command(
         name="review_banner_image",
@@ -303,6 +349,7 @@ class SettingsCog(commands.Cog):
             embed=embeds.success_embed("Banner default buat review udah diatur.").set_thumbnail(url=image_url),
             ephemeral=True,
         )
+        await activity_log.log_activity(self.bot, interaction.user, "Setting Diubah", "Banner default review diubah.")
 
     @settings_group.command(
         name="leaderboard_channel",
@@ -319,6 +366,9 @@ class SettingsCog(commands.Cog):
                 "Pake `/settings leaderboard_refresh` buat posting gambar pertamanya."
             ),
             ephemeral=True,
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Channel leaderboard diatur ke {channel.mention}."
         )
 
     @settings_group.command(
@@ -368,6 +418,9 @@ class SettingsCog(commands.Cog):
             ),
             ephemeral=True,
         )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"{user.mention} disembunyiin dari leaderboard."
+        )
 
     @settings_group.command(
         name="leaderboard_include",
@@ -392,6 +445,9 @@ class SettingsCog(commands.Cog):
         await interaction.followup.send(
             embed=embeds.success_embed(f"{user.mention} udah gak disembunyiin lagi. Leaderboard udah di-refresh."),
             ephemeral=True,
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"{user.mention} dimasukin lagi ke leaderboard."
         )
 
     @settings_group.command(
@@ -423,6 +479,7 @@ class SettingsCog(commands.Cog):
             "order_log_channel_id": await runtime.order_log_channel_id(),
             "reviews_channel_id": await runtime.reviews_channel_id(),
             "testi_proof_channel_id": await runtime.testi_proof_channel_id(),
+            "activity_log_channel_id": await runtime.activity_log_channel_id(),
             "card_requests_channel_id": await runtime.card_requests_channel_id(),
             "card_admin_fee": await runtime.card_admin_fee(),
             "card_noctoin_rate": await runtime.card_noctoin_rate(),
@@ -448,6 +505,9 @@ class SettingsCog(commands.Cog):
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Role staff diatur ke {role.mention}."), ephemeral=True
         )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Role staff diatur ke {role.mention}."
+        )
 
     @settings_group.command(name="ticket_category", description="Atur kategori tempat channel ticket baru dibuat.")
     @app_commands.describe(category="Category channel buat ticket baru")
@@ -456,6 +516,9 @@ class SettingsCog(commands.Cog):
         await settings_q.set_setting(self.bot.db, "ticket_category_id", str(category.id))
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Kategori ticket diatur ke **{category.name}**."), ephemeral=True
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Kategori ticket diatur ke **{category.name}**."
         )
 
     @settings_group.command(name="archive_category", description="Atur kategori tempat ticket yang di-auto-archive dipindahin.")
@@ -466,6 +529,9 @@ class SettingsCog(commands.Cog):
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Kategori archive diatur ke **{category.name}**."), ephemeral=True
         )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Kategori archive ticket diatur ke **{category.name}**."
+        )
 
     @settings_group.command(name="log_channel", description="Atur channel tempat transcript ticket diposting.")
     @app_commands.describe(channel="Channel buat transcript dan log ticket")
@@ -474,6 +540,9 @@ class SettingsCog(commands.Cog):
         await settings_q.set_setting(self.bot.db, "ticket_log_channel_id", str(channel.id))
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Log channel diatur ke {channel.mention}."), ephemeral=True
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Channel transcript ticket diatur ke {channel.mention}."
         )
 
     @settings_group.command(name="auto_archive_hours", description="Jam inaktif sebelum ticket di-auto-archive.")
@@ -487,6 +556,9 @@ class SettingsCog(commands.Cog):
             embed=embeds.success_embed(f"Ticket bakal auto-archive abis {hours} jam gak ada aktivitas."),
             ephemeral=True,
         )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Auto-archive ticket diatur ke {hours} jam."
+        )
 
     @settings_group.command(name="currency", description="Atur label mata uang default buat produk baru.")
     @app_commands.describe(currency_label="contoh: USD, IDR, Robux")
@@ -495,6 +567,9 @@ class SettingsCog(commands.Cog):
         await settings_q.set_setting(self.bot.db, "default_currency", currency_label)
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Mata uang default diatur ke **{currency_label}**."), ephemeral=True
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Mata uang default diatur ke **{currency_label}**."
         )
 
 

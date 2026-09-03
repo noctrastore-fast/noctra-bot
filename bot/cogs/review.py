@@ -12,7 +12,7 @@ from bot.database.queries import orders as orders_q
 from bot.database.queries import products as products_q
 from bot.database.queries import reviews as reviews_q
 from bot.ui import embeds
-from bot.utils import review_actions
+from bot.utils import activity_log, review_actions
 from bot.utils.autocomplete import product_autocomplete
 from bot.utils.permissions import staff_only
 
@@ -196,6 +196,9 @@ class ReviewCog(commands.Cog):
         if posted:
             message += " Udah diposting ke channel review publik."
         await interaction.response.send_message(embed=embeds.success_embed(message), ephemeral=True)
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Review Di-approve", f"Review #{review_id} di-approve."
+        )
 
     @admin_group.command(name="reject", description="Reject review yang pending.")
     @app_commands.describe(review_id="Review pending yang mau di-reject")
@@ -204,6 +207,9 @@ class ReviewCog(commands.Cog):
     async def reject(self, interaction: discord.Interaction, review_id: int) -> None:
         await reviews_q.set_review_status(self.bot.db, review_id, "rejected")
         await interaction.response.send_message(embed=embeds.success_embed("Review udah di-reject."), ephemeral=True)
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Review Di-reject", f"Review #{review_id} di-reject."
+        )
 
     @admin_group.command(name="hide", description="Sembunyiin review yang sebelumnya udah di-approve.")
     @app_commands.describe(review_id="Review yang mau disembunyiin")
@@ -211,6 +217,9 @@ class ReviewCog(commands.Cog):
     async def hide(self, interaction: discord.Interaction, review_id: int) -> None:
         await reviews_q.set_review_status(self.bot.db, review_id, "hidden")
         await interaction.response.send_message(embed=embeds.success_embed("Review udah disembunyiin."), ephemeral=True)
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Review Disembunyiin", f"Review #{review_id} disembunyiin."
+        )
 
     @admin_group.command(name="delete", description="Hapus review secara permanen.")
     @app_commands.describe(review_id="Review yang mau dihapus")
@@ -218,6 +227,9 @@ class ReviewCog(commands.Cog):
     async def admin_delete(self, interaction: discord.Interaction, review_id: int) -> None:
         await reviews_q.delete_review(self.bot.db, review_id)
         await interaction.response.send_message(embed=embeds.success_embed("Review udah dihapus."), ephemeral=True)
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Review Dihapus", f"Review #{review_id} dihapus permanen."
+        )
 
 
 async def setup(bot: commands.Bot) -> None:

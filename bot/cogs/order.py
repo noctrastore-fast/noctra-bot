@@ -12,7 +12,7 @@ from bot.database.queries import orders as orders_q
 from bot.database.queries import payments as payments_q
 from bot.database.queries import products as products_q
 from bot.ui import embeds
-from bot.utils import order_actions
+from bot.utils import activity_log, order_actions
 from bot.utils.autocomplete import any_order_autocomplete
 from bot.utils.permissions import staff_only
 
@@ -84,14 +84,18 @@ class OrderCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         if status == "completed":
-            ok, message = await order_actions.mark_completed(self.bot, order)
+            ok, message = await order_actions.mark_completed(self.bot, order, interaction.user)
         elif status == "cancelled":
-            ok, message = await order_actions.cancel_order(self.bot, order, reason)
+            ok, message = await order_actions.cancel_order(self.bot, order, reason, interaction.user)
         elif status == "refunded":
-            ok, message = await order_actions.refund_order(self.bot, order, reason)
+            ok, message = await order_actions.refund_order(self.bot, order, reason, interaction.user)
         else:
             await orders_q.set_order_status(self.bot.db, order, status)
             ok, message = True, f"Status order `#{order}` diatur jadi **{status}**."
+            await activity_log.log_activity(
+                self.bot, interaction.user, "Status Order Diubah Manual",
+                f"Order #{order} diatur manual jadi **{status}**.",
+            )
         await interaction.followup.send(
             embed=embeds.success_embed(message) if ok else embeds.error_embed(message), ephemeral=True
         )
@@ -110,10 +114,14 @@ class OrderCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         if payment_status == "paid":
-            ok, message = await order_actions.mark_paid(self.bot, order)
+            ok, message = await order_actions.mark_paid(self.bot, order, interaction.user)
         else:
             await orders_q.set_payment_status(self.bot.db, order, payment_status)
             ok, message = True, f"Status pembayaran order `#{order}` diatur jadi **{payment_status}**."
+            await activity_log.log_activity(
+                self.bot, interaction.user, "Status Pembayaran Diubah Manual",
+                f"Status pembayaran order #{order} diatur manual jadi **{payment_status}**.",
+            )
         await interaction.followup.send(
             embed=embeds.success_embed(message) if ok else embeds.error_embed(message), ephemeral=True
         )
