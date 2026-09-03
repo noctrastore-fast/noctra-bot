@@ -24,6 +24,7 @@ from PIL import Image
 from bot.core.logger import logger
 from bot.database.queries import cards as cards_q
 from bot.ui import embeds
+from bot.utils import activity_log
 from bot.utils.card_image import generate_card_image
 from bot.utils.helpers import RuntimeSettings, format_price
 
@@ -87,7 +88,7 @@ async def _send_card_dm(bot, user_id: int, card, extra_text: str) -> None:
         logger.warning("Gagal DM kartu ke user %s.", user_id)
 
 
-async def approve_request(bot, request_id: int) -> tuple[bool, str]:
+async def approve_request(bot, request_id: int, actor: discord.abc.User | None = None) -> tuple[bool, str]:
     db = bot.db
     request = await cards_q.get_request(db, request_id)
     if not request:
@@ -121,6 +122,11 @@ async def approve_request(bot, request_id: int) -> tuple[bool, str]:
                 f"{format_price(request['admin_fee'], currency)})."
             ),
         )
+        await activity_log.log_activity(
+            bot, actor, "Kartu Baru Disetujui",
+            f"Kartu baru buat <@{request['user_id']}> disetujui (ID `{card_id}`, Credit awal "
+            f"{format_price(credit, currency)}).",
+        )
         return True, f"Kartu baru buat <@{request['user_id']}> berhasil dibuat (ID `{card_id}`)."
 
     # kind == "topup"
@@ -139,10 +145,15 @@ async def approve_request(bot, request_id: int) -> tuple[bool, str]:
             f"Saldo sekarang: **{format_price(card['credit_balance'], currency)}**."
         ),
     )
+    await activity_log.log_activity(
+        bot, actor, "Isi Saldo Disetujui",
+        f"Saldo <@{request['user_id']}> ditambah {format_price(request['amount'], currency)} "
+        f"(saldo sekarang {format_price(card['credit_balance'], currency)}).",
+    )
     return True, f"Saldo <@{request['user_id']}> berhasil ditambah {format_price(request['amount'], currency)}."
 
 
-async def reject_request(bot, request_id: int, reason: str | None) -> tuple[bool, str]:
+async def reject_request(bot, request_id: int, reason: str | None, actor: discord.abc.User | None = None) -> tuple[bool, str]:
     db = bot.db
     request = await cards_q.get_request(db, request_id)
     if not request:
@@ -161,4 +172,8 @@ async def reject_request(bot, request_id: int, reason: str | None) -> tuple[bool
     except discord.HTTPException:
         logger.warning("Gagal DM penolakan kartu ke user %s.", request["user_id"])
 
+    log_text = f"Permintaan kartu `#{request_id}` dari <@{request['user_id']}> di-reject."
+    if reason:
+        log_text += f"\nAlasan: {reason}"
+    await activity_log.log_activity(bot, actor, "Permintaan Kartu Di-reject", log_text)
     return True, f"Permintaan `#{request_id}` udah di-reject."

@@ -20,6 +20,7 @@ from bot.database.queries import payments as payments_q
 from bot.database.queries import products as products_q
 from bot.database.queries import reviews as reviews_q
 from bot.ui import components, embeds
+from bot.utils import activity_log
 from bot.utils.helpers import RuntimeSettings, format_price
 
 
@@ -230,7 +231,7 @@ async def _notify_testi_proof(bot, order, product) -> None:
         logger.exception("Gagal posting notifikasi Testi Money buat order #%s.", order["id"])
 
 
-async def mark_paid(bot, order_id: int) -> tuple[bool, str]:
+async def mark_paid(bot, order_id: int, actor: discord.abc.User | None = None) -> tuple[bool, str]:
     db = bot.db
     order = await orders_q.get_order(db, order_id)
     if not order:
@@ -249,10 +250,13 @@ async def mark_paid(bot, order_id: int) -> tuple[bool, str]:
         order_id=order_id,
         track=True,
     )
+    await activity_log.log_activity(
+        bot, actor, "Order Ditandain Lunas", f"Order #{order_id} ditandain **lunas**."
+    )
     return True, f"Order #{order_id} ditandain lunas."
 
 
-async def mark_completed(bot, order_id: int) -> tuple[bool, str]:
+async def mark_completed(bot, order_id: int, actor: discord.abc.User | None = None) -> tuple[bool, str]:
     db = bot.db
     order = await orders_q.get_order(db, order_id)
     if not order:
@@ -348,10 +352,13 @@ async def mark_completed(bot, order_id: int) -> tuple[bool, str]:
     except Exception:  # noqa: BLE001
         logger.warning("Refresh leaderboard gagal diem-diem abis order #%s.", order_id)
 
+    await activity_log.log_activity(
+        bot, actor, "Order Ditandain Selesai", f"Order #{order_id} ditandain **selesai**."
+    )
     return True, f"Order #{order_id} ditandain selesai."
 
 
-async def cancel_order(bot, order_id: int, reason: str | None) -> tuple[bool, str]:
+async def cancel_order(bot, order_id: int, reason: str | None, actor: discord.abc.User | None = None) -> tuple[bool, str]:
     db = bot.db
     order = await orders_q.get_order(db, order_id)
     if not order:
@@ -393,10 +400,14 @@ async def cancel_order(bot, order_id: int, reason: str | None) -> tuple[bool, st
     except Exception:  # noqa: BLE001
         logger.warning("Refresh leaderboard gagal diem-diem abis batalin order #%s.", order_id)
 
+    log_text = f"Order #{order_id} dibatalin."
+    if reason:
+        log_text += f"\nAlasan: {reason}"
+    await activity_log.log_activity(bot, actor, "Order Dibatalin", log_text)
     return True, f"Order #{order_id} dibatalin."
 
 
-async def refund_order(bot, order_id: int, reason: str | None) -> tuple[bool, str]:
+async def refund_order(bot, order_id: int, reason: str | None, actor: discord.abc.User | None = None) -> tuple[bool, str]:
     db = bot.db
     order = await orders_q.get_order(db, order_id)
     if not order:
@@ -430,4 +441,8 @@ async def refund_order(bot, order_id: int, reason: str | None) -> tuple[bool, st
     except Exception:  # noqa: BLE001
         logger.warning("Refresh leaderboard gagal diem-diem abis refund order #%s.", order_id)
 
+    log_text = f"Order #{order_id} di-refund."
+    if reason:
+        log_text += f"\nAlasan: {reason}"
+    await activity_log.log_activity(bot, actor, "Order Di-refund", log_text)
     return True, f"Order #{order_id} di-refund."

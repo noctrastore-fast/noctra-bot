@@ -307,6 +307,14 @@ class RuntimeSettings:
         except (TypeError, ValueError):
             return 10000.0
 
+    async def activity_log_channel_id(self) -> int | None:
+        """Channel tempat log aktivitas staff diposting (order, kartu,
+        moderasi review, perubahan settings) -- diatur lewat
+        /settings activity_log_channel. Kosong = fitur ini mati total,
+        gak ada yang keposting kemanapun."""
+        value = await self._get("activity_log_channel_id", None)
+        return int(value) if value else None
+
     # -- Kartu review publik (/settings review_emoji) --------------------------
     # Dipake components.review_card_container() -- diposting ke
     # /settings reviews_channel abis staff approve review.
