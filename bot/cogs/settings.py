@@ -17,23 +17,40 @@ from bot.utils.validators import is_valid_emoji
 
 
 class SettingsCog(commands.Cog):
-    """Atur staff role, kategori/channel ticket, mata uang, dan auto-archive."""
+    """Atur staff role, kategori/channel ticket, mata uang, dan auto-archive.
+
+    Command dikelompokin jadi subgroup per fitur (/settings review, /settings
+    order, /settings ticket, /settings leaderboard, /settings card) -- BUKAN
+    semuanya rata di /settings langsung -- soalnya Discord ngebatesin maksimal
+    25 subcommand per grup, dan udah pernah literally kena limit itu waktu
+    semuanya numpuk jadi satu (lihat git history: bot.cogs.settings sempet
+    gagal ke-load total gara-gara ValueError: maximum number of child
+    commands exceeded). Subgroup juga bikin command lebih gampang ditemuin
+    (semua soal review nyatu di satu tempat, dst)."""
 
     settings_group = app_commands.Group(
         name="settings", description="Atur NOCTRA.", guild_only=True
     )
-    # Subgroup terpisah -- Discord ngebatesin maksimal 25 subcommand per
-    # grup, dan settings_group udah deket/lewat batas itu abis nambahin
-    # banyak fitur. Command kartu digital dikumpulin ke sini
-    # (/settings card <sub>) biar settings_group sendiri gak numpuk, dan
-    # ada ruang buat nambah command baru lagi ke depannya tanpa kena limit
-    # yang sama lagi.
     card_group = app_commands.Group(
         name="card", description="Atur fitur kartu digital NOCTRA.", parent=settings_group
+    )
+    review_group = app_commands.Group(
+        name="review", description="Atur kartu review publik & notifikasi bukti review.", parent=settings_group
+    )
+    order_group = app_commands.Group(
+        name="order", description="Atur channel order-log & pengumuman pembelian.", parent=settings_group
+    )
+    ticket_group = app_commands.Group(
+        name="ticket", description="Atur kategori, log channel, dan auto-archive ticket.", parent=settings_group
+    )
+    leaderboard_group = app_commands.Group(
+        name="leaderboard", description="Atur channel dan visibilitas leaderboard Top Spenders.", parent=settings_group
     )
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+
+    # -- Top-level (berdiri sendiri, gak masuk subgroup manapun) ---------------
 
     @settings_group.command(name="shop_panel", description="Posting panel tombol Browse Store di channel ini.")
     @app_commands.describe(
@@ -59,6 +76,104 @@ class SettingsCog(commands.Cog):
         )
         await interaction.channel.send(view=view)
         await interaction.response.send_message(embed=embeds.success_embed("Panel toko udah diposting."), ephemeral=True)
+
+    @settings_group.command(
+        name="activity_log_channel",
+        description="Atur channel log aktivitas staff (settings, order, kartu, moderasi review).",
+    )
+    @app_commands.describe(channel="Channel internal buat log aktivitas staff")
+    @staff_only()
+    async def activity_log_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
+        await settings_q.set_setting(self.bot.db, "activity_log_channel_id", str(channel.id))
+        await interaction.response.send_message(
+            embed=embeds.success_embed(f"Channel log aktivitas diatur ke {channel.mention}."), ephemeral=True
+        )
+
+    @settings_group.command(
+        name="ad_channel",
+        description="Atur channel default buat /iklan kalau parameter channel-nya gak diisi.",
+    )
+    @app_commands.describe(channel="Channel default buat posting iklan")
+    @staff_only()
+    async def ad_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
+        await settings_q.set_setting(self.bot.db, "ad_channel_id", str(channel.id))
+        await interaction.response.send_message(
+            embed=embeds.success_embed(
+                f"Channel default iklan diatur ke {channel.mention}. "
+                "Pake `/iklan` kapan aja -- kalau parameter `channel`-nya gak diisi, otomatis kesitu."
+            ),
+            ephemeral=True,
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Channel default iklan diatur ke {channel.mention}."
+        )
+
+    @settings_group.command(
+        name="main_server_invite",
+        description="Atur link invite server utama -- muncul jadi tombol 'Gabung Server' abis customer selesai review.",
+    )
+    @app_commands.describe(invite_url="Link invite Discord server utama kamu, contoh https://discord.gg/xxxxx")
+    @staff_only()
+    async def main_server_invite(self, interaction: discord.Interaction, invite_url: str) -> None:
+        await settings_q.set_setting(self.bot.db, "main_server_invite_url", invite_url)
+        await interaction.response.send_message(
+            embed=embeds.success_embed("Link invite server utama udah diatur."), ephemeral=True
+        )
+        await activity_log.log_activity(self.bot, interaction.user, "Setting Diubah", "Link invite server utama diubah.")
+
+    @settings_group.command(name="staff_role", description="Atur role staff buat command admin dan ticket.")
+    @app_commands.describe(role="Role yang bakal dianggep staff")
+    @staff_only()
+    async def staff_role(self, interaction: discord.Interaction, role: discord.Role) -> None:
+        await settings_q.set_setting(self.bot.db, "staff_role_id", str(role.id))
+        await interaction.response.send_message(
+            embed=embeds.success_embed(f"Role staff diatur ke {role.mention}."), ephemeral=True
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Role staff diatur ke {role.mention}."
+        )
+
+    @settings_group.command(name="currency", description="Atur label mata uang default buat produk baru.")
+    @app_commands.describe(currency_label="contoh: USD, IDR, Robux")
+    @staff_only()
+    async def currency(self, interaction: discord.Interaction, currency_label: str) -> None:
+        await settings_q.set_setting(self.bot.db, "default_currency", currency_label)
+        await interaction.response.send_message(
+            embed=embeds.success_embed(f"Mata uang default diatur ke **{currency_label}**."), ephemeral=True
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Mata uang default diatur ke **{currency_label}**."
+        )
+
+    @settings_group.command(name="view", description="Liat pengaturan yang lagi aktif.")
+    @staff_only()
+    async def view(self, interaction: discord.Interaction) -> None:
+        runtime = RuntimeSettings(self.bot.db)
+        excluded_count = len(await runtime.leaderboard_excluded_user_ids())
+        values = {
+            "staff_role_id": await runtime.staff_role_id(),
+            "order_log_channel_id": await runtime.order_log_channel_id(),
+            "reviews_channel_id": await runtime.reviews_channel_id(),
+            "testi_proof_channel_id": await runtime.testi_proof_channel_id(),
+            "activity_log_channel_id": await runtime.activity_log_channel_id(),
+            "card_requests_channel_id": await runtime.card_requests_channel_id(),
+            "card_admin_fee": await runtime.card_admin_fee(),
+            "card_noctoin_rate": await runtime.card_noctoin_rate(),
+            "purchase_feed_channel_id": await runtime.purchase_feed_channel_id(),
+            "ad_channel_id": await runtime.ad_channel_id(),
+            "main_server_invite_url": await runtime.main_server_invite_url(),
+            "review_banner_url": await runtime.review_banner_url(),
+            "leaderboard_channel_id": await runtime.leaderboard_channel_id(),
+            "leaderboard_excluded_users": excluded_count or "Gak ada",
+            "ticket_category_id": await runtime.ticket_category_id(),
+            "ticket_archive_category_id": await runtime.ticket_archive_category_id(),
+            "ticket_log_channel_id": await runtime.ticket_log_channel_id(),
+            "ticket_auto_archive_hours": await runtime.ticket_auto_archive_hours(),
+            "default_currency": await runtime.default_currency(),
+        }
+        await interaction.response.send_message(embed=embeds.settings_embed(values), ephemeral=True)
+
+    # -- /settings card ---------------------------------------------------------
 
     @card_group.command(name="panel", description="Posting panel Buat Kartu/Isi Saldo/Cek Saldo di channel ini.")
     @app_commands.describe(
@@ -127,40 +242,15 @@ class SettingsCog(commands.Cog):
             self.bot, interaction.user, "Setting Diubah", f"Rate Noctoins diatur ke {rate:,.0f} {currency} per 1 Noctoin."
         )
 
-    @settings_group.command(
-        name="activity_log_channel",
-        description="Atur channel log aktivitas staff (settings, order, kartu, moderasi review).",
-    )
-    @app_commands.describe(channel="Channel internal buat log aktivitas staff")
-    @staff_only()
-    async def activity_log_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
-        await settings_q.set_setting(self.bot.db, "activity_log_channel_id", str(channel.id))
-        await interaction.response.send_message(
-            embed=embeds.success_embed(f"Channel log aktivitas diatur ke {channel.mention}."), ephemeral=True
-        )
+    # -- /settings review ---------------------------------------------------------
 
-    @settings_group.command(
-        name="order_log_channel",
-        description="Atur channel tempat order baru diposting sama kontrol staff (Mark Paid/Completed/Cancel/Refund).",
-    )
-    @app_commands.describe(channel="Channel buat notifikasi order dan kontrol staff")
-    @staff_only()
-    async def order_log_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
-        await settings_q.set_setting(self.bot.db, "order_log_channel_id", str(channel.id))
-        await interaction.response.send_message(
-            embed=embeds.success_embed(f"Channel order-log diatur ke {channel.mention}."), ephemeral=True
-        )
-        await activity_log.log_activity(
-            self.bot, interaction.user, "Setting Diubah", f"Channel order-log diatur ke {channel.mention}."
-        )
-
-    @settings_group.command(
-        name="reviews_channel",
+    @review_group.command(
+        name="channel",
         description="Atur channel publik tempat review customer yang di-approve diposting (buat reputasi toko).",
     )
     @app_commands.describe(channel="Channel publik buat showcase review")
     @staff_only()
-    async def reviews_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
+    async def review_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
         await settings_q.set_setting(self.bot.db, "reviews_channel_id", str(channel.id))
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Channel review diatur ke {channel.mention}."), ephemeral=True
@@ -169,9 +259,9 @@ class SettingsCog(commands.Cog):
             self.bot, interaction.user, "Setting Diubah", f"Channel review publik diatur ke {channel.mention}."
         )
 
-    @settings_group.command(
-        name="testi_proof_channel",
-        description="Atur channel notif internal begitu customer kirim foto bukti review (beda dari reviews_channel).",
+    @review_group.command(
+        name="testi_channel",
+        description="Atur channel notif internal begitu customer kirim foto bukti review (beda dari review channel).",
     )
     @app_commands.describe(channel="Channel internal staff buat notifikasi bukti review")
     @staff_only()
@@ -209,8 +299,8 @@ class SettingsCog(commands.Cog):
             )
         return True
 
-    @settings_group.command(
-        name="review_emoji",
+    @review_group.command(
+        name="emoji",
         description="Atur emoji custom buat kartu review publik. Parameter yang gak diisi tetep kepake yang lama.",
     )
     @app_commands.describe(
@@ -252,8 +342,8 @@ class SettingsCog(commands.Cog):
                 embed=embeds.success_embed("Emoji kartu review udah diupdate."), ephemeral=True
             )
 
-    @settings_group.command(
-        name="testi_proof_emoji",
+    @review_group.command(
+        name="testi_emoji",
         description="Atur emoji custom buat notifikasi bukti review. Parameter yang gak diisi tetep kepake yang lama.",
     )
     @app_commands.describe(
@@ -289,8 +379,39 @@ class SettingsCog(commands.Cog):
                 embed=embeds.success_embed("Emoji notifikasi bukti review udah diupdate."), ephemeral=True
             )
 
-    @settings_group.command(
-        name="purchase_feed_channel",
+    @review_group.command(
+        name="banner",
+        description="Atur gambar banner default buat kartu review yang customer-nya gak nyertain foto.",
+    )
+    @app_commands.describe(image_url="URL gambar banner default (PNG/JPG/WebP)")
+    @staff_only()
+    async def review_banner(self, interaction: discord.Interaction, image_url: str) -> None:
+        await settings_q.set_setting(self.bot.db, "review_banner_url", image_url)
+        await interaction.response.send_message(
+            embed=embeds.success_embed("Banner default buat review udah diatur.").set_thumbnail(url=image_url),
+            ephemeral=True,
+        )
+        await activity_log.log_activity(self.bot, interaction.user, "Setting Diubah", "Banner default review diubah.")
+
+    # -- /settings order ---------------------------------------------------------
+
+    @order_group.command(
+        name="log_channel",
+        description="Atur channel tempat order baru diposting sama kontrol staff (Mark Paid/Completed/Cancel/Refund).",
+    )
+    @app_commands.describe(channel="Channel buat notifikasi order dan kontrol staff")
+    @staff_only()
+    async def order_log_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
+        await settings_q.set_setting(self.bot.db, "order_log_channel_id", str(channel.id))
+        await interaction.response.send_message(
+            embed=embeds.success_embed(f"Channel order-log diatur ke {channel.mention}."), ephemeral=True
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Channel order-log diatur ke {channel.mention}."
+        )
+
+    @order_group.command(
+        name="purchase_feed",
         description="Atur channel tempat pengumuman 'Si X baru aja beli Y' diposting.",
     )
     @app_commands.describe(channel="Channel publik buat pengumuman pembelian")
@@ -305,56 +426,62 @@ class SettingsCog(commands.Cog):
             self.bot, interaction.user, "Setting Diubah", f"Channel pengumuman pembelian diatur ke {channel.mention}."
         )
 
-    @settings_group.command(
-        name="ad_channel",
-        description="Atur channel default buat /iklan kalau parameter channel-nya gak diisi.",
-    )
-    @app_commands.describe(channel="Channel default buat posting iklan")
+    # -- /settings ticket ---------------------------------------------------------
+
+    @ticket_group.command(name="category", description="Atur kategori tempat channel ticket baru dibuat.")
+    @app_commands.describe(category="Category channel buat ticket baru")
     @staff_only()
-    async def ad_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
-        await settings_q.set_setting(self.bot.db, "ad_channel_id", str(channel.id))
+    async def ticket_category(self, interaction: discord.Interaction, category: discord.CategoryChannel) -> None:
+        await settings_q.set_setting(self.bot.db, "ticket_category_id", str(category.id))
         await interaction.response.send_message(
-            embed=embeds.success_embed(
-                f"Channel default iklan diatur ke {channel.mention}. "
-                "Pake `/iklan` kapan aja -- kalau parameter `channel`-nya gak diisi, otomatis kesitu."
-            ),
+            embed=embeds.success_embed(f"Kategori ticket diatur ke **{category.name}**."), ephemeral=True
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Kategori ticket diatur ke **{category.name}**."
+        )
+
+    @ticket_group.command(name="archive_category", description="Atur kategori tempat ticket yang di-auto-archive dipindahin.")
+    @app_commands.describe(category="Category channel buat ticket yang diarsipin")
+    @staff_only()
+    async def archive_category(self, interaction: discord.Interaction, category: discord.CategoryChannel) -> None:
+        await settings_q.set_setting(self.bot.db, "ticket_archive_category_id", str(category.id))
+        await interaction.response.send_message(
+            embed=embeds.success_embed(f"Kategori archive diatur ke **{category.name}**."), ephemeral=True
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Kategori archive ticket diatur ke **{category.name}**."
+        )
+
+    @ticket_group.command(name="log_channel", description="Atur channel tempat transcript ticket diposting.")
+    @app_commands.describe(channel="Channel buat transcript dan log ticket")
+    @staff_only()
+    async def ticket_log_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
+        await settings_q.set_setting(self.bot.db, "ticket_log_channel_id", str(channel.id))
+        await interaction.response.send_message(
+            embed=embeds.success_embed(f"Log channel diatur ke {channel.mention}."), ephemeral=True
+        )
+        await activity_log.log_activity(
+            self.bot, interaction.user, "Setting Diubah", f"Channel transcript ticket diatur ke {channel.mention}."
+        )
+
+    @ticket_group.command(name="auto_archive_hours", description="Jam inaktif sebelum ticket di-auto-archive.")
+    @app_commands.describe(hours="Jumlah jam")
+    @staff_only()
+    async def ticket_auto_archive_hours(
+        self, interaction: discord.Interaction, hours: app_commands.Range[int, 1, 720]
+    ) -> None:
+        await settings_q.set_setting(self.bot.db, "ticket_auto_archive_hours", str(hours))
+        await interaction.response.send_message(
+            embed=embeds.success_embed(f"Ticket bakal auto-archive abis {hours} jam gak ada aktivitas."),
             ephemeral=True,
         )
         await activity_log.log_activity(
-            self.bot, interaction.user, "Setting Diubah", f"Channel default iklan diatur ke {channel.mention}."
+            self.bot, interaction.user, "Setting Diubah", f"Auto-archive ticket diatur ke {hours} jam."
         )
 
-    @settings_group.command(
-        name="main_server_invite",
-        description="Atur link invite server utama -- muncul jadi tombol 'Gabung Server' abis customer selesai review.",
-    )
-    @app_commands.describe(invite_url="Link invite Discord server utama kamu, contoh https://discord.gg/xxxxx")
-    @staff_only()
-    async def main_server_invite(self, interaction: discord.Interaction, invite_url: str) -> None:
-        await settings_q.set_setting(self.bot.db, "main_server_invite_url", invite_url)
-        await interaction.response.send_message(
-            embed=embeds.success_embed("Link invite server utama udah diatur."), ephemeral=True
-        )
-        await activity_log.log_activity(self.bot, interaction.user, "Setting Diubah", "Link invite server utama diubah.")
+    # -- /settings leaderboard ---------------------------------------------------------
 
-    @settings_group.command(
-        name="review_banner_image",
-        description="Atur gambar banner default buat kartu review yang customer-nya gak nyertain foto.",
-    )
-    @app_commands.describe(image_url="URL gambar banner default (PNG/JPG/WebP)")
-    @staff_only()
-    async def review_banner_image(self, interaction: discord.Interaction, image_url: str) -> None:
-        await settings_q.set_setting(self.bot.db, "review_banner_url", image_url)
-        await interaction.response.send_message(
-            embed=embeds.success_embed("Banner default buat review udah diatur.").set_thumbnail(url=image_url),
-            ephemeral=True,
-        )
-        await activity_log.log_activity(self.bot, interaction.user, "Setting Diubah", "Banner default review diubah.")
-
-    @settings_group.command(
-        name="leaderboard_channel",
-        description="Atur channel buat gambar leaderboard Top Spenders.",
-    )
+    @leaderboard_group.command(name="channel", description="Atur channel buat gambar leaderboard Top Spenders.")
     @app_commands.describe(channel="Channel khusus buat gambar leaderboard")
     @staff_only()
     async def leaderboard_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
@@ -363,7 +490,7 @@ class SettingsCog(commands.Cog):
         await interaction.response.send_message(
             embed=embeds.success_embed(
                 f"Channel leaderboard diatur ke {channel.mention}. "
-                "Pake `/settings leaderboard_refresh` buat posting gambar pertamanya."
+                "Pake `/settings leaderboard refresh` buat posting gambar pertamanya."
             ),
             ephemeral=True,
         )
@@ -371,10 +498,7 @@ class SettingsCog(commands.Cog):
             self.bot, interaction.user, "Setting Diubah", f"Channel leaderboard diatur ke {channel.mention}."
         )
 
-    @settings_group.command(
-        name="leaderboard_refresh",
-        description="Posting atau refresh gambar leaderboard manual sekarang juga.",
-    )
+    @leaderboard_group.command(name="refresh", description="Posting atau refresh gambar leaderboard manual sekarang juga.")
     @staff_only()
     async def leaderboard_refresh(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True, thinking=True)
@@ -385,13 +509,13 @@ class SettingsCog(commands.Cog):
             await interaction.followup.send(
                 embed=embeds.error_embed(
                     "Gak bisa refresh leaderboard. Pastiin "
-                    "`/settings leaderboard_channel` udah diatur dan ada minimal satu order yang selesai."
+                    "`/settings leaderboard channel` udah diatur dan ada minimal satu order yang selesai."
                 ),
                 ephemeral=True,
             )
 
-    @settings_group.command(
-        name="leaderboard_exclude",
+    @leaderboard_group.command(
+        name="exclude",
         description="Sembunyiin spend user dari leaderboard Top Spenders (misal akun tester).",
     )
     @app_commands.describe(user="User yang mau disembunyiin dari leaderboard")
@@ -422,8 +546,8 @@ class SettingsCog(commands.Cog):
             self.bot, interaction.user, "Setting Diubah", f"{user.mention} disembunyiin dari leaderboard."
         )
 
-    @settings_group.command(
-        name="leaderboard_include",
+    @leaderboard_group.command(
+        name="include",
         description="Balikin lagi user yang sebelumnya disembunyiin dari leaderboard.",
     )
     @app_commands.describe(user="User yang mau dimasukin lagi ke leaderboard")
@@ -450,8 +574,8 @@ class SettingsCog(commands.Cog):
             self.bot, interaction.user, "Setting Diubah", f"{user.mention} dimasukin lagi ke leaderboard."
         )
 
-    @settings_group.command(
-        name="leaderboard_excluded_list",
+    @leaderboard_group.command(
+        name="list",
         description="Liat daftar user yang lagi disembunyiin dari leaderboard.",
     )
     @staff_only()
@@ -467,109 +591,6 @@ class SettingsCog(commands.Cog):
         lines = "\n".join(f"<@{uid}> (`{uid}`)" for uid in excluded)
         await interaction.response.send_message(
             embed=embeds.info_embed("Disembunyiin dari Leaderboard", lines), ephemeral=True
-        )
-
-    @settings_group.command(name="view", description="Liat pengaturan yang lagi aktif.")
-    @staff_only()
-    async def view(self, interaction: discord.Interaction) -> None:
-        runtime = RuntimeSettings(self.bot.db)
-        excluded_count = len(await runtime.leaderboard_excluded_user_ids())
-        values = {
-            "staff_role_id": await runtime.staff_role_id(),
-            "order_log_channel_id": await runtime.order_log_channel_id(),
-            "reviews_channel_id": await runtime.reviews_channel_id(),
-            "testi_proof_channel_id": await runtime.testi_proof_channel_id(),
-            "activity_log_channel_id": await runtime.activity_log_channel_id(),
-            "card_requests_channel_id": await runtime.card_requests_channel_id(),
-            "card_admin_fee": await runtime.card_admin_fee(),
-            "card_noctoin_rate": await runtime.card_noctoin_rate(),
-            "purchase_feed_channel_id": await runtime.purchase_feed_channel_id(),
-            "ad_channel_id": await runtime.ad_channel_id(),
-            "main_server_invite_url": await runtime.main_server_invite_url(),
-            "review_banner_url": await runtime.review_banner_url(),
-            "leaderboard_channel_id": await runtime.leaderboard_channel_id(),
-            "leaderboard_excluded_users": excluded_count or "Gak ada",
-            "ticket_category_id": await runtime.ticket_category_id(),
-            "ticket_archive_category_id": await runtime.ticket_archive_category_id(),
-            "ticket_log_channel_id": await runtime.ticket_log_channel_id(),
-            "ticket_auto_archive_hours": await runtime.ticket_auto_archive_hours(),
-            "default_currency": await runtime.default_currency(),
-        }
-        await interaction.response.send_message(embed=embeds.settings_embed(values), ephemeral=True)
-
-    @settings_group.command(name="staff_role", description="Atur role staff buat command admin dan ticket.")
-    @app_commands.describe(role="Role yang bakal dianggep staff")
-    @staff_only()
-    async def staff_role(self, interaction: discord.Interaction, role: discord.Role) -> None:
-        await settings_q.set_setting(self.bot.db, "staff_role_id", str(role.id))
-        await interaction.response.send_message(
-            embed=embeds.success_embed(f"Role staff diatur ke {role.mention}."), ephemeral=True
-        )
-        await activity_log.log_activity(
-            self.bot, interaction.user, "Setting Diubah", f"Role staff diatur ke {role.mention}."
-        )
-
-    @settings_group.command(name="ticket_category", description="Atur kategori tempat channel ticket baru dibuat.")
-    @app_commands.describe(category="Category channel buat ticket baru")
-    @staff_only()
-    async def ticket_category(self, interaction: discord.Interaction, category: discord.CategoryChannel) -> None:
-        await settings_q.set_setting(self.bot.db, "ticket_category_id", str(category.id))
-        await interaction.response.send_message(
-            embed=embeds.success_embed(f"Kategori ticket diatur ke **{category.name}**."), ephemeral=True
-        )
-        await activity_log.log_activity(
-            self.bot, interaction.user, "Setting Diubah", f"Kategori ticket diatur ke **{category.name}**."
-        )
-
-    @settings_group.command(name="archive_category", description="Atur kategori tempat ticket yang di-auto-archive dipindahin.")
-    @app_commands.describe(category="Category channel buat ticket yang diarsipin")
-    @staff_only()
-    async def archive_category(self, interaction: discord.Interaction, category: discord.CategoryChannel) -> None:
-        await settings_q.set_setting(self.bot.db, "ticket_archive_category_id", str(category.id))
-        await interaction.response.send_message(
-            embed=embeds.success_embed(f"Kategori archive diatur ke **{category.name}**."), ephemeral=True
-        )
-        await activity_log.log_activity(
-            self.bot, interaction.user, "Setting Diubah", f"Kategori archive ticket diatur ke **{category.name}**."
-        )
-
-    @settings_group.command(name="log_channel", description="Atur channel tempat transcript ticket diposting.")
-    @app_commands.describe(channel="Channel buat transcript dan log ticket")
-    @staff_only()
-    async def log_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
-        await settings_q.set_setting(self.bot.db, "ticket_log_channel_id", str(channel.id))
-        await interaction.response.send_message(
-            embed=embeds.success_embed(f"Log channel diatur ke {channel.mention}."), ephemeral=True
-        )
-        await activity_log.log_activity(
-            self.bot, interaction.user, "Setting Diubah", f"Channel transcript ticket diatur ke {channel.mention}."
-        )
-
-    @settings_group.command(name="auto_archive_hours", description="Jam inaktif sebelum ticket di-auto-archive.")
-    @app_commands.describe(hours="Jumlah jam")
-    @staff_only()
-    async def auto_archive_hours(
-        self, interaction: discord.Interaction, hours: app_commands.Range[int, 1, 720]
-    ) -> None:
-        await settings_q.set_setting(self.bot.db, "ticket_auto_archive_hours", str(hours))
-        await interaction.response.send_message(
-            embed=embeds.success_embed(f"Ticket bakal auto-archive abis {hours} jam gak ada aktivitas."),
-            ephemeral=True,
-        )
-        await activity_log.log_activity(
-            self.bot, interaction.user, "Setting Diubah", f"Auto-archive ticket diatur ke {hours} jam."
-        )
-
-    @settings_group.command(name="currency", description="Atur label mata uang default buat produk baru.")
-    @app_commands.describe(currency_label="contoh: USD, IDR, Robux")
-    @staff_only()
-    async def currency(self, interaction: discord.Interaction, currency_label: str) -> None:
-        await settings_q.set_setting(self.bot.db, "default_currency", currency_label)
-        await interaction.response.send_message(
-            embed=embeds.success_embed(f"Mata uang default diatur ke **{currency_label}**."), ephemeral=True
-        )
-        await activity_log.log_activity(
-            self.bot, interaction.user, "Setting Diubah", f"Mata uang default diatur ke **{currency_label}**."
         )
 
 
