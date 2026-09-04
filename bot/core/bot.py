@@ -71,6 +71,7 @@ class NoctraBot(commands.Bot):
     async def _sync_commands(self) -> None:
         try:
             await self._clear_stale_guild_commands()
+            await self._clear_stale_global_commands()
 
             if config.guild_id:
                 guild = discord.Object(id=config.guild_id)
@@ -96,6 +97,20 @@ class NoctraBot(commands.Bot):
             self.tree.clear_commands(guild=guild)
             await self.tree.sync(guild=guild)
             logger.info("Cleared stale guild-specific commands for guild %s.", guild_id)
+
+    async def _clear_stale_global_commands(self) -> None:
+        """Pasangan _clear_stale_guild_commands() di atas, tapi buat arah
+        sebaliknya: command GLOBAL yang nyangkut (misal dari histori
+        sebelum GUILD_ID pernah di-set) -- scope-nya beda, jadi GAK
+        kesentuh sama clear_commands(guild=guild) yang di atas. Cuma jalan
+        kalau CLEAR_GLOBAL_COMMANDS=1 diset -- aman dibiarin nyala terus
+        (no-op abis command global-nya beneran bersih), tapi boleh
+        dicabut lagi abis kepake."""
+        if not config.clear_global_commands:
+            return
+        self.tree.clear_commands(guild=None)
+        await self.tree.sync()
+        logger.info("Cleared stale global commands.")
 
     def _register_persistent_views(self) -> None:
         # Imported lazily to avoid import-order issues with bot.db being used

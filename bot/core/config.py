@@ -61,6 +61,19 @@ class Config:
         default_factory=lambda: _get_int_list("CLEAR_GUILD_COMMANDS_FOR")
     )
 
+    # One-time cleanup: kalau ada command GLOBAL basi (misal bot sempet
+    # dijalanin TANPA GUILD_ID di suatu titik di masa lalu, jadi ke-daftar
+    # global -- ke SEMUA server bot ini join -- bukan cuma satu server).
+    # Beda scope dari CLEAR_GUILD_COMMANDS_FOR di atas, jadi command global
+    # yang nyangkut itu GAK kesentuh sama clear yang itu. Set
+    # CLEAR_GLOBAL_COMMANDS=1 buat wipe-nya sekali. Propagasi command
+    # global itu LAMBAT di sisi Discord (bisa sampe ~1 jam), beda dari
+    # command guild yang biasanya instan -- jangan panik kalau hasilnya
+    # gak langsung keliatan abis redeploy.
+    clear_global_commands: bool = field(
+        default_factory=lambda: _get_bool("CLEAR_GLOBAL_COMMANDS")
+    )
+
     # Persistence
     database_path: str = field(
         default_factory=lambda: os.getenv("DATABASE_PATH", "data/noctra.db")
