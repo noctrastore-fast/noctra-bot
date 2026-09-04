@@ -71,7 +71,6 @@ class NoctraBot(commands.Bot):
     async def _sync_commands(self) -> None:
         try:
             await self._clear_stale_guild_commands()
-            await self._clear_stale_global_commands()
 
             if config.guild_id:
                 guild = discord.Object(id=config.guild_id)
@@ -81,6 +80,14 @@ class NoctraBot(commands.Bot):
             else:
                 synced = await self.tree.sync()
                 logger.info("Synced %d global commands.", len(synced))
+
+            # WAJIB abis blok guild sync di atas, BUKAN sebelumnya --
+            # clear_commands(guild=None) ngosongin tree LOKAL yang sama
+            # yang barusan dipake copy_global_to(). Kalau dipanggil
+            # duluan, tree-nya kadung kosong pas giliran guild sync jalan,
+            # jadi command yang ke-push ke guild ikut kosong juga (ini
+            # yang bikin "ilang semua" kemarin).
+            await self._clear_stale_global_commands()
         except Exception:  # noqa: BLE001
             logger.exception("Gagal sync command tree ke Discord.")
 
