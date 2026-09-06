@@ -391,8 +391,9 @@ def payment_list_embed(payments: list) -> discord.Embed:
     for p in payments:
         state = "aktif" if p["enabled"] else "nonaktif"
         has_image = "ada gambar" if p["image_url"] else "belum ada gambar"
+        emoji_prefix = f"{p['emoji']} " if p["emoji"] else ""
         lines.append(
-            f"{MARK_BULLET} **#{p['id']} -- {p['name']}** {MARK_DASH} {state} "
+            f"{MARK_BULLET} {emoji_prefix}**#{p['id']} -- {p['name']}** {MARK_DASH} {state} "
             f"{MARK_DASH} timeout {p['timeout_minutes']}m {MARK_DASH} {has_image}"
         )
     embed.description = "\n".join(lines)

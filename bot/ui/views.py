@@ -430,6 +430,7 @@ async def proceed_to_payment(interaction: discord.Interaction, product, field_va
             "instructions": None,
             "image_url": None,
             "timeout_minutes": None,
+            "emoji": "💳",
         })
 
     if not methods:
@@ -456,7 +457,7 @@ class PaymentSelect(discord.ui.Select):
         self.field_values = field_values
         self.method_map = {str(m["id"]): m for m in methods}
         options = [
-            discord.SelectOption(label=m["name"][:100], value=str(m["id"]))
+            discord.SelectOption(label=m["name"][:100], value=str(m["id"]), emoji=m["emoji"] or None)
             for m in methods[:MAX_SELECT_OPTIONS]
         ]
         super().__init__(placeholder="Pilih metode pembayaran...", options=options, min_values=1, max_values=1)
@@ -1258,7 +1259,7 @@ class CardPaymentSelect(discord.ui.Select):
         self.admin_fee = admin_fee
         self.method_map = {str(m["id"]): m for m in methods}
         options = [
-            discord.SelectOption(label=m["name"][:100], value=str(m["id"]))
+            discord.SelectOption(label=m["name"][:100], value=str(m["id"]), emoji=m["emoji"] or None)
             for m in methods[:MAX_SELECT_OPTIONS]
         ]
         super().__init__(placeholder="Pilih metode pembayaran...", options=options, min_values=1, max_values=1)
