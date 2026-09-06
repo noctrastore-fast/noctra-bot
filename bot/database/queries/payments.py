@@ -11,20 +11,21 @@ async def create_payment_method(
     instructions: str | None,
     timeout_minutes: int,
     image_url: str | None = None,
+    emoji: str | None = None,
 ) -> int:
     row = await db.fetchone("SELECT COALESCE(MAX(position), -1) + 1 AS p FROM payment_methods")
     position = row["p"] if row else 0
     return await db.execute(
         """
-        INSERT INTO payment_methods (name, instructions, image_url, timeout_minutes, position)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO payment_methods (name, instructions, image_url, timeout_minutes, position, emoji)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (name, instructions, image_url, timeout_minutes, position),
+        (name, instructions, image_url, timeout_minutes, position, emoji),
     )
 
 
 async def update_payment_method(db: Database, payment_id: int, **fields) -> None:
-    allowed = {"name", "instructions", "image_url", "enabled", "timeout_minutes", "position"}
+    allowed = {"name", "instructions", "image_url", "enabled", "timeout_minutes", "position", "emoji"}
     sets, params = [], []
     for key, value in fields.items():
         if key not in allowed:
