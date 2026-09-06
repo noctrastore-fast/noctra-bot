@@ -166,6 +166,7 @@ class Database:
             ("orders", "payment_proof_url", "ALTER TABLE orders ADD COLUMN payment_proof_url TEXT"),
             ("orders", "paid_with_credit", "ALTER TABLE orders ADD COLUMN paid_with_credit INTEGER NOT NULL DEFAULT 0"),
             ("orders", "noctoins_used", "ALTER TABLE orders ADD COLUMN noctoins_used INTEGER NOT NULL DEFAULT 0"),
+            ("payment_methods", "emoji", "ALTER TABLE payment_methods ADD COLUMN emoji TEXT"),
         ]
         for table, column, ddl in migrations:
             cursor = await self.conn.execute(f"PRAGMA table_info({table})")
