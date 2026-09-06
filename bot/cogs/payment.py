@@ -10,6 +10,7 @@ from bot.database.queries import payments as payments_q
 from bot.ui import embeds
 from bot.utils.autocomplete import payment_autocomplete
 from bot.utils.permissions import staff_only
+from bot.utils.validators import is_valid_emoji
 
 
 class PaymentCog(commands.Cog):
@@ -28,6 +29,7 @@ class PaymentCog(commands.Cog):
         instructions="Instruksi buat customer (misal nomor rekening, cara bayar)",
         image_url="Gambar QR code / pembayaran buat customer (PNG/JPG/WebP), misal QRIS kamu",
         timeout_minutes="Menit sebelum order yang belum dibayar otomatis expired",
+        emoji="Emoji custom/biasa yang muncul di samping metode ini pas dropdown pilih bayar",
     )
     @staff_only()
     async def add(
@@ -37,9 +39,18 @@ class PaymentCog(commands.Cog):
         instructions: str | None = None,
         image_url: str | None = None,
         timeout_minutes: app_commands.Range[int, 1, 10080] = 30,
+        emoji: str | None = None,
     ) -> None:
+        if emoji and not is_valid_emoji(emoji):
+            await interaction.response.send_message(
+                embed=embeds.error_embed(
+                    "Itu kayaknya bukan emoji yang valid. Pake emoji biasa atau custom emoji dari server ini."
+                ),
+                ephemeral=True,
+            )
+            return
         payment_id = await payments_q.create_payment_method(
-            self.bot.db, name, instructions, timeout_minutes, image_url
+            self.bot.db, name, instructions, timeout_minutes, image_url, emoji
         )
         await interaction.response.send_message(
             embed=embeds.success_embed(f"Metode pembayaran **{name}** berhasil ditambahin dengan ID `{payment_id}`."),
@@ -53,6 +64,7 @@ class PaymentCog(commands.Cog):
         instructions="Instruksi baru",
         image_url="URL gambar QR code / pembayaran baru (PNG/JPG/WebP)",
         timeout_minutes="Timeout pembayaran baru (menit)",
+        emoji="Emoji baru (ketik none buat hapus)",
     )
     @app_commands.autocomplete(payment=payment_autocomplete)
     @staff_only()
@@ -64,10 +76,19 @@ class PaymentCog(commands.Cog):
         instructions: str | None = None,
         image_url: str | None = None,
         timeout_minutes: int | None = None,
+        emoji: str | None = None,
     ) -> None:
         existing = await payments_q.get_payment_method(self.bot.db, payment)
         if not existing:
             await interaction.response.send_message(embed=embeds.error_embed("Metode pembayaran gak ketemu."), ephemeral=True)
+            return
+        if emoji and emoji != "none" and not is_valid_emoji(emoji):
+            await interaction.response.send_message(
+                embed=embeds.error_embed(
+                    "Itu kayaknya bukan emoji yang valid. Pake emoji biasa atau custom emoji dari server ini."
+                ),
+                ephemeral=True,
+            )
             return
         updates = {}
         if name is not None:
@@ -78,6 +99,8 @@ class PaymentCog(commands.Cog):
             updates["image_url"] = image_url
         if timeout_minutes is not None:
             updates["timeout_minutes"] = timeout_minutes
+        if emoji is not None:
+            updates["emoji"] = None if emoji == "none" else emoji
         await payments_q.update_payment_method(self.bot.db, payment, **updates)
         await interaction.response.send_message(embed=embeds.success_embed("Metode pembayaran berhasil diupdate."), ephemeral=True)
 
