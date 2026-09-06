@@ -1,24 +1,27 @@
 """
-NOCTRA leaderboard image generator v2 -- podium + glass-panel list, upgrade
-dari versi flat-list sebelumnya biar lebih hidup & gak generic-looking.
-Teknik font-bundling, no-emoji-policy, dan supersampling 2x tetep
-dipertahanin sama persis kayak versi lama (alasannya sama: Railway/Nixpacks
-gak punya font system, emoji butuh font penuh yang gak ke-bundle).
+NOCTRA leaderboard image generator v3 -- perbaikan dari v2: podium sempet
+punya ruang kosong gede di bawah tiap card (proporsi kurang pas), warna
+antar rank kurang beda (semua card background-nya near-black polos), dan
+beda tinggi #1 vs #2/#3 kurang kerasa dramatis. Ketiganya dibenerin di sini.
 
-Perubahan desain utama dibanding versi lama:
-  * Top 3 dirender sebagai PODIUM -- 3 card kepisah dengan tinggi beda-beda
-    (#1 di tengah paling tinggi, #2/#3 di kanan-kiri lebih pendek), bukan
-    baris rata kayak rank lainnya. Sekilas pandang langsung kebaca "ini
-    leaderboard" tanpa perlu baca angka rank-nya.
-  * Semua card (podium maupun list #4+) dirender pake efek glassmorphism
-    ringan -- overlay putih transparan tipis + border atas terang / border
-    bawah gelap buat simulasi tepi kaca -- BUKAN flat solid fill.
-  * Aksen warna KEDUA (crimson/garnet gelap) ditambahin khusus buat #1 --
-    glow di belakang podium-nya beda dari ungu brand biasa, plus mahkota
-    kecil di atas avatar-nya, biar juara 1 kerasa "spesial", bukan cuma
-    beda ukuran doang.
-  * Background dikasih tekstur garis diagonal tipis banget (bukan flat
-    gradient polos) buat depth/tekstur halus.
+Teknik font-bundling, no-emoji-policy, dan supersampling 2x tetep
+dipertahanin sama persis kayak versi-versi sebelumnya.
+
+Perubahan v3 dibanding v2:
+  * Podium card sekarang punya BAR PERBANDINGAN SALDO di bagian bawah
+    (relatif ke #1) -- ngisi ruang yang dulu kosong DAN nambah informasi
+    visual (langsung kebaca seberapa jauh gap #2/#3 dari #1), bukan cuma
+    dekorasi kosong.
+  * Tiap card podium dapet TINT warna lembut sesuai medali-nya (crimson
+    buat #1, silver-blue buat #2, bronze buat #3) di atas efek glass-nya,
+    bukan cuma garis aksen tipis di atas doang -- keliatan jelas beda
+    nuansa antar rank dari jauh.
+  * Beda tinggi #1 vs #2/#3 diperbesar (dulu 480 vs 396, sekarang 460 vs
+    350) sekaligus proporsinya dirapetin ke konten asli, gak ada spasi
+    nganggur lagi.
+  * Font nama & angka #1 dibikin lebih gede dari #2/#3 (dulu sama rata)
+    biar hierarki "juara 1 emang beda kelas" kerasa dari tipografinya
+    sendiri, gak cuma dari posisi/tinggi card.
 """
 
 from __future__ import annotations
@@ -32,39 +35,41 @@ from PIL import Image, ImageDraw, ImageFont
 # -- Palette ------------------------------------------------------------------
 BG_TOP       = (7,   5,  16)
 BG_BOT       = (17,  10, 36)
-ACCENT       = (140, 112, 255)   # ungu brand -- dipake buat rank 2+ dan aksen umum
-CRIMSON      = (168, 40,  68)    # aksen kedua, KHUSUS #1 -- dark red sesuai selera Nikss
+ACCENT       = (140, 112, 255)   # ungu brand -- rank 2+ dan aksen umum
+CRIMSON      = (168, 40,  68)    # aksen kedua, KHUSUS #1
 CRIMSON_SOFT = (214, 92, 118)
 GOLD         = (231, 181, 95)
 SILVER       = (192, 198, 212)
+SILVER_TINT  = (120, 150, 200)   # tint card #2 -- biru-keperakan, beda dari silver medali-nya sendiri
 BRONZE       = (205, 140, 90)
 WHITE        = (248, 246, 252)
 MUTED        = (150, 140, 182)
-GLASS_TOP    = (255, 255, 255, 26)   # highlight tipis di tepi atas card kaca
-GLASS_BOTTOM = (0,   0,   0,  46)    # shadow tipis di tepi bawah card kaca
-BAR_BG       = (42, 29, 74)
+GLASS_TOP    = (255, 255, 255, 24)
+GLASS_BOTTOM = (0,   0,   0,  46)
+BAR_BG       = (0, 0, 0, 70)
 MEDAL_CLR    = [GOLD, SILVER, BRONZE]
+TINT_CLR     = [CRIMSON, SILVER_TINT, BRONZE]
 
 # -- Layout (nilai final pre-supersampling) ------------------------------------
 IMG_W        = 1800
 PAD          = 60
 HEADER_H     = 230
-PODIUM_GAP   = 28
-PODIUM_H1    = 480   # tinggi card #1
-PODIUM_H23   = 396   # tinggi card #2 & #3
+PODIUM_H1    = 460
+PODIUM_H23   = 350
+PODIUM_EXTRA = 40
 PODIUM_TO_LIST_GAP = 44
 ROW_H        = 118
 ROW_GAP      = 14
 BOTTOM       = 48
 RADIUS       = 26
-AVATAR_D_1   = 128
-AVATAR_D_23  = 96
+AVATAR_D_1   = 116
+AVATAR_D_23  = 88
 AVATAR_D_LIST = 70
-BADGE_D      = 54
+BADGE_D      = 52
+BAR_W_FRAC   = 0.78
 
-SS = 2  # supersampling factor
+SS = 2
 
-# -- Fonts ----------------------------------------------------------------------
 _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
 _BOLD_CANDIDATES = [
     _ASSETS_DIR / "DejaVuSans-Bold.ttf",
@@ -111,6 +116,11 @@ def _tw(draw: ImageDraw.ImageDraw, text: str, font) -> int:
     return int(draw.textlength(text, font=font))
 
 
+def _text_h(draw, font) -> int:
+    bbox = draw.textbbox((0, 0), "Ag", font=font)
+    return bbox[3] - bbox[1]
+
+
 def _tracked_width(draw, text: str, font, tracking: int) -> int:
     if not text:
         return 0
@@ -142,9 +152,6 @@ def _gradient(w: int, h: int, top, bot) -> Image.Image:
 
 
 def _diagonal_texture(w: int, h: int) -> Image.Image:
-    """Garis diagonal SANGAT tipis buat tekstur background -- niatnya
-    kerasa doang, bukan keliatan jelas, biar background gak flat polos
-    tapi tetep gak ganggu keterbacaan konten di atasnya."""
     layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
     spacing = 46
@@ -162,18 +169,20 @@ def _soft_glow(w: int, h: int, cx: int, cy: int, max_r: int, colour, peak_alpha:
     return layer
 
 
-def _glass_panel(img: Image.Image, x0: int, y0: int, x1: int, y1: int, radius: int,
-                  accent_top_colour=None, accent_top_h: int = 0) -> None:
-    """Card glassmorphism: overlay putih transparan tipis di atas apapun
-    yang udah ada di belakangnya (background gradient + glow keliatan
-    samar-samar nembus), plus highlight tipis di tepi atas dan shadow tipis
-    di tepi bawah biar kerasa punya ketebalan kaca. `accent_top_colour`
-    (opsional) nambahin strip warna solid tipis di tepi paling atas --
-    dipake buat medali rank di podium."""
+def _glass_panel(
+    img: Image.Image, x0: int, y0: int, x1: int, y1: int, radius: int,
+    accent_top_colour=None, accent_top_h: int = 0, tint=None, tint_alpha: int = 30,
+) -> None:
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
     od.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=GLASS_TOP)
     img.alpha_composite(overlay)
+
+    if tint is not None:
+        tint_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        td = ImageDraw.Draw(tint_layer)
+        td.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=(*tint, tint_alpha))
+        img.alpha_composite(tint_layer)
 
     shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
     sd = ImageDraw.Draw(shadow)
@@ -213,23 +222,23 @@ def _circle_avatar(img: Image.Image, avatar: Image.Image | None, initials: str,
 
 
 def _draw_crown(draw: ImageDraw.ImageDraw, cx: int, base_y: int, w: int, h: int, colour) -> None:
-    """Mahkota flat sederhana (poligon 3-puncak) -- vector shape doang,
-    BUKAN emoji, khusus dipasang di atas avatar #1 biar kerasa "juara"
-    tanpa gantungan ke font emoji yang gak ke-bundle di Railway."""
     hw = w // 2
     pts = [
         (cx - hw, base_y),
-        (cx - hw, base_y - int(h * 0.45)),
-        (cx - hw // 2, base_y - int(h * 0.78)),
-        (cx - hw // 4, base_y - int(h * 0.45)),
+        (cx - hw, base_y - int(h * 0.42)),
+        (cx - hw // 2, base_y - int(h * 0.75)),
+        (cx - hw // 4, base_y - int(h * 0.42)),
         (cx, base_y - h),
-        (cx + hw // 4, base_y - int(h * 0.45)),
-        (cx + hw // 2, base_y - int(h * 0.78)),
-        (cx + hw, base_y - int(h * 0.45)),
+        (cx + hw // 4, base_y - int(h * 0.42)),
+        (cx + hw // 2, base_y - int(h * 0.75)),
+        (cx + hw, base_y - int(h * 0.42)),
         (cx + hw, base_y),
     ]
     draw.polygon(pts, fill=colour, outline=WHITE)
     draw.rounded_rectangle([cx - hw, base_y - 6, cx + hw, base_y + 8], radius=4, fill=colour)
+    jewel_r = max(3, int(h * 0.09))
+    for jx, jy in ((cx - hw // 2, base_y - int(h * 0.75)), (cx, base_y - h), (cx + hw // 2, base_y - int(h * 0.75))):
+        draw.ellipse([jx - jewel_r, jy - jewel_r, jx + jewel_r, jy + jewel_r], fill=WHITE)
 
 
 def _draw_medal_badge(draw: ImageDraw.ImageDraw, cx: int, cy: int, rank: int, r: int, font) -> None:
@@ -255,40 +264,63 @@ def _fmt(amount: float, currency: str) -> str:
 
 def _podium_card(
     img: Image.Image, entry: dict, rank: int, x0: int, x1: int, top_y: int, bottom_y: int,
-    avatar_d: int, fonts: dict,
+    avatar_d: int, max_spend: float,
 ) -> None:
+    S = SS
     draw = ImageDraw.Draw(img)
     cx = (x0 + x1) // 2
-    accent = CRIMSON if rank == 0 else MEDAL_CLR[rank]
+    accent = TINT_CLR[rank]
+    strip_colour = CRIMSON if rank == 0 else MEDAL_CLR[rank]
 
-    _glass_panel(img, x0, top_y, x1, bottom_y, RADIUS, accent_top_colour=accent, accent_top_h=8 * SS)
+    _glass_panel(
+        img, x0, top_y, x1, bottom_y, RADIUS * S,
+        accent_top_colour=strip_colour, accent_top_h=8 * S,
+        tint=accent, tint_alpha=30,
+    )
     draw = ImageDraw.Draw(img)
 
-    avatar_top = top_y + 34 * SS
+    avatar_top = top_y + 28 * S
     if rank == 0:
-        _draw_crown(draw, cx, avatar_top - 10 * SS, int(avatar_d * 0.9), int(avatar_d * 0.55), GOLD)
+        _draw_crown(draw, cx, avatar_top - 8 * S, int(avatar_d * 0.85), int(avatar_d * 0.5), GOLD)
     ring_colour = CRIMSON_SOFT if rank == 0 else MEDAL_CLR[rank]
     _circle_avatar(img, entry.get("avatar"), entry.get("display_name", "?"), cx, avatar_top, avatar_d, ring_colour)
 
     badge_cy = avatar_top + avatar_d
-    _draw_medal_badge(ImageDraw.Draw(img), cx, badge_cy, rank, BADGE_D // 2, fonts["badge"])
+    _draw_medal_badge(ImageDraw.Draw(img), cx, badge_cy, rank, (BADGE_D * S) // 2, _f(_BOLD, 22 * S))
 
     draw = ImageDraw.Draw(img)
-    name = entry.get("display_name", "Unknown")[:18]
-    name_y = badge_cy + BADGE_D // 2 + 18 * SS
-    nw = _tw(draw, name, fonts["name"])
-    draw.text((cx - nw // 2, name_y), name, font=fonts["name"], fill=WHITE)
+    name_size = 34 * S if rank == 0 else 25 * S
+    amount_size = 38 * S if rank == 0 else 27 * S
+    f_name = _f(_BOLD, name_size)
+    f_amount = _f(_BOLD, amount_size)
+    f_orders = _f(_REG, 17 * S)
 
-    spend_s = _fmt(entry.get("total_spent", 0), entry.get("currency_label", "IDR"))
-    spend_y = name_y + fonts["name_h"] + 12 * SS
-    sw = _tw(draw, spend_s, fonts["amount"])
-    draw.text((cx - sw // 2, spend_y), spend_s, font=fonts["amount"], fill=accent if rank == 0 else WHITE)
+    name = entry.get("display_name", "Unknown")[:16]
+    name_y = badge_cy + (BADGE_D * S) // 2 + 18 * S
+    nw = _tw(draw, name, f_name)
+    draw.text((cx - nw // 2, name_y), name, font=f_name, fill=WHITE)
+
+    spend = entry.get("total_spent", 0)
+    spend_s = _fmt(spend, entry.get("currency_label", "IDR"))
+    spend_y = name_y + _text_h(draw, f_name) + 10 * S
+    sw = _tw(draw, spend_s, f_amount)
+    draw.text((cx - sw // 2, spend_y), spend_s, font=f_amount, fill=CRIMSON_SOFT if rank == 0 else WHITE)
 
     orders = entry.get("total_orders", 0)
     ord_txt = f"{orders} order{'s' if orders != 1 else ''}"
-    ord_y = spend_y + fonts["amount_h"] + 10 * SS
-    ow = _tw(draw, ord_txt, fonts["orders"])
-    draw.text((cx - ow // 2, ord_y), ord_txt, font=fonts["orders"], fill=MUTED)
+    ord_y = spend_y + _text_h(draw, f_amount) + 10 * S
+    ow = _tw(draw, ord_txt, f_orders)
+    draw.text((cx - ow // 2, ord_y), ord_txt, font=f_orders, fill=MUTED)
+
+    bar_w = int((x1 - x0) * BAR_W_FRAC)
+    bar_x0 = cx - bar_w // 2
+    bar_h = 14 * S
+    bar_y = bottom_y - 34 * S - bar_h
+    ratio = (spend / max_spend) if max_spend else 0
+    fill_w = max(10 * S, int(bar_w * math.sqrt(max(0.0, min(1.0, ratio)))))
+    draw.rounded_rectangle([bar_x0, bar_y, bar_x0 + bar_w, bar_y + bar_h], radius=bar_h // 2, fill=BAR_BG)
+    bar_fill_colour = CRIMSON_SOFT if rank == 0 else MEDAL_CLR[rank]
+    draw.rounded_rectangle([bar_x0, bar_y, bar_x0 + fill_w, bar_y + bar_h], radius=bar_h // 2, fill=bar_fill_colour)
 
 
 def generate_leaderboard_image(
@@ -298,15 +330,11 @@ def generate_leaderboard_image(
     subtitle: str = "TOP SPENDERS",
     timestamp: str = "",
 ) -> BytesIO:
-    """`entries` sorted best-first: rank, display_name, total_spent,
-    total_orders, currency_label, avatar (PIL Image atau None). Sama
-    kontrak-nya kayak versi lama -- cancelled/refunded udah difilter
-    upstream, gak perlu difilter lagi di sini."""
     S = SS
     img_w = IMG_W * S
     pad = PAD * S
     header_h = HEADER_H * S
-    podium_gap = PODIUM_GAP * S
+    podium_extra = PODIUM_EXTRA * S
     podium_h1 = PODIUM_H1 * S
     podium_h23 = PODIUM_H23 * S
     podium_to_list_gap = PODIUM_TO_LIST_GAP * S
@@ -322,8 +350,9 @@ def generate_leaderboard_image(
     top3 = entries[:3]
     rest = entries[3:]
     has_podium = len(top3) > 0
+    max_spend = max((e.get("total_spent", 0) for e in top3), default=1) or 1
 
-    podium_section_h = (podium_h1 + 40 * S) if has_podium else 0
+    podium_section_h = (podium_h1 + podium_extra) if has_podium else 0
     list_n = max(0, len(rest))
     list_section_h = list_n * (row_h + row_gap) - (row_gap if list_n else 0)
 
@@ -335,11 +364,11 @@ def generate_leaderboard_image(
     img.alpha_composite(_diagonal_texture(img_w, h))
     if has_podium:
         podium_cy = header_h + podium_section_h // 2
-        img.alpha_composite(_soft_glow(img_w, h, img_w // 2, podium_cy, int(img_w * 0.42), CRIMSON, 20))
-        img.alpha_composite(_soft_glow(img_w, h, int(img_w * 0.15), int(h * 0.1), int(img_w * 0.22), ACCENT, 14))
+        img.alpha_composite(_soft_glow(img_w, h, img_w // 2, podium_cy, int(img_w * 0.4), CRIMSON, 26))
+        img.alpha_composite(_soft_glow(img_w, h, int(img_w * 0.14), int(podium_cy * 0.9), int(img_w * 0.2), SILVER_TINT, 16))
+        img.alpha_composite(_soft_glow(img_w, h, int(img_w * 0.86), int(podium_cy * 0.9), int(img_w * 0.2), BRONZE, 16))
     draw = ImageDraw.Draw(img)
 
-    # -- Header ---------------------------------------------------------------
     f_title = _f(_BOLD, 56 * S)
     f_sub = _f(_BOLD, 21 * S)
     f_ts = _f(_REG, 15 * S)
@@ -354,8 +383,6 @@ def generate_leaderboard_image(
     sy = ty + 72 * S
     _draw_centered_tracked(draw, img_w // 2, sy, subtitle, f_sub, CRIMSON_SOFT, sub_tracking)
 
-    # Divider kecil di bawah subtitle -- bukan garis panjang full-width
-    # kayak sebelumnya, biar keliatan lebih editorial/gak generic.
     div_w = 90 * S
     div_y = sy + 40 * S
     draw.line([(img_w // 2 - div_w // 2, div_y), (img_w // 2 + div_w // 2, div_y)], fill=CRIMSON, width=3 * S)
@@ -365,24 +392,12 @@ def generate_leaderboard_image(
         tsw = _tw(draw, timestamp, f_ts)
         draw.text(((img_w - tsw) // 2, ts_y), timestamp, font=f_ts, fill=MUTED)
 
-    # -- Podium (top 3) ---------------------------------------------------------
-    fonts = {
-        "badge": _f(_BOLD, 24 * S),
-        "name": _f(_BOLD, 30 * S),
-        "amount": _f(_BOLD, 30 * S),
-        "orders": _f(_REG, 18 * S),
-    }
-    bbox = draw.textbbox((0, 0), "Ag", font=fonts["name"])
-    fonts["name_h"] = bbox[3] - bbox[1]
-    bbox = draw.textbbox((0, 0), "Ag", font=fonts["amount"])
-    fonts["amount_h"] = bbox[3] - bbox[1]
-
     if has_podium:
         col_gap = 26 * S
         col_w = (img_w - 2 * pad - 2 * col_gap) // 3
-        podium_bottom = header_h + podium_section_h - 20 * S
+        podium_bottom = header_h + podium_section_h - podium_extra // 2
 
-        order_slots = [1, 0, 2]  # #2 kiri, #1 tengah, #3 kanan
+        order_slots = [1, 0, 2]
         for slot_idx, entry_idx in enumerate(order_slots):
             if entry_idx >= len(top3):
                 continue
@@ -392,9 +407,8 @@ def generate_leaderboard_image(
             card_h = podium_h1 if entry_idx == 0 else podium_h23
             top_y = podium_bottom - card_h
             avatar_d = avatar_d1 if entry_idx == 0 else avatar_d23
-            _podium_card(img, entry, entry_idx, x0, x1, top_y, podium_bottom, avatar_d, fonts)
+            _podium_card(img, entry, entry_idx, x0, x1, top_y, podium_bottom, avatar_d, max_spend)
 
-    # -- List (rank 4+) ---------------------------------------------------------
     if rest:
         f_rank_list = _f(_BOLD, 22 * S)
         f_name_list = _f(_BOLD, 25 * S)
@@ -431,7 +445,7 @@ def generate_leaderboard_image(
 
             spend_s = _fmt(entry.get("total_spent", 0), entry.get("currency_label", "IDR"))
             sw2 = _tw(draw, spend_s, f_amount_list)
-            draw.text((rx1 - 40 * S - sw2, ry0 + row_h // 2 - fonts["amount_h"] // 2), spend_s, font=f_amount_list, fill=ACCENT)
+            draw.text((rx1 - 40 * S - sw2, ry0 + row_h // 2 - _text_h(draw, f_amount_list) // 2), spend_s, font=f_amount_list, fill=ACCENT)
 
     final_h = h // S
     img = img.convert("RGB").resize((IMG_W, final_h), Image.LANCZOS)
