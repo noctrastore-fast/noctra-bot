@@ -83,6 +83,54 @@ class MessageDraft:
         return sum(1 for b in self.blocks if isinstance(b, TextBlock))
 
 
+def draft_to_dict(draft: MessageDraft) -> dict:
+    """Serialize MessageDraft ke dict siap json.dumps -- dipake
+    bot.ui.panel_builder buat nyimpen draft ke tabel panel_drafts biar
+    bisa dilanjutin edit belakangan, lewat sesi/proses bot manapun."""
+    return {
+        "title": draft.title,
+        "description": draft.description,
+        "blocks": [
+            {"type": "text", "content": b.content} if isinstance(b, TextBlock) else {"type": "separator"}
+            for b in draft.blocks
+        ],
+        "thumbnail_url": draft.thumbnail_url,
+        "banner_url": draft.banner_url,
+        "color": draft.color,
+        "buttons": [
+            {"label": b.label, "emoji": b.emoji, "url": b.url, "reply_button_id": b.reply_button_id}
+            for b in draft.buttons
+        ],
+    }
+
+
+def draft_from_dict(data: dict) -> MessageDraft:
+    """Kebalikan draft_to_dict() -- rekonstruksi MessageDraft dari dict
+    hasil json.loads(). Field yang gak ada di data (misal draft lama dari
+    versi skema yang beda) di-default ke kosong, bukan KeyError."""
+    blocks: list[Block] = []
+    for b in data.get("blocks", []):
+        if b.get("type") == "separator":
+            blocks.append(SeparatorBlock())
+        else:
+            blocks.append(TextBlock(b.get("content", "")))
+    buttons = [
+        ButtonSpec(
+            label=b["label"], emoji=b.get("emoji"), url=b.get("url"), reply_button_id=b.get("reply_button_id")
+        )
+        for b in data.get("buttons", [])
+    ]
+    return MessageDraft(
+        title=data.get("title"),
+        description=data.get("description"),
+        blocks=blocks,
+        thumbnail_url=data.get("thumbnail_url"),
+        banner_url=data.get("banner_url"),
+        color=data.get("color", COLOR_PRIMARY),
+        buttons=buttons,
+    )
+
+
 def _group_blocks(blocks: list[Block]) -> list[list[TextBlock]]:
     """Pecah `blocks` jadi beberapa grup teks, dipisah tiap ketemu
     SeparatorBlock -- dipake buat render maupun buat nentuin titik sisip
