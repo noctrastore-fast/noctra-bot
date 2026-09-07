@@ -191,3 +191,15 @@ CREATE TABLE IF NOT EXISTS card_requests (
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     resolved_at TEXT
 );
+
+-- Draft pesan /panel yang kesimpen (title/description/blocks/tombol/dst,
+-- serialized JSON) -- biar staff bisa lanjutin edit pesan panel yang
+-- udah keposting KAPAN AJA (lewat /panel message:<link/ID>), gak cuma
+-- sekali sesi doang selagi PanelBuilderView masih nyangkut di memori.
+-- Ke-update tiap ada perubahan draft, lihat bot.ui.panel_builder.
+CREATE TABLE IF NOT EXISTS panel_drafts (
+    message_id  INTEGER PRIMARY KEY,
+    channel_id  INTEGER NOT NULL,
+    draft_json  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
