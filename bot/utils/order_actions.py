@@ -21,7 +21,7 @@ from bot.database.queries import products as products_q
 from bot.database.queries import reviews as reviews_q
 from bot.ui import components, embeds
 from bot.utils import activity_log
-from bot.utils.helpers import RuntimeSettings, format_price
+from bot.utils.helpers import RuntimeSettings, format_price, is_video_url
 
 
 async def _notify_customer(
@@ -71,18 +71,24 @@ async def send_message_to_customer(
 async def forward_to_staff(
     bot, order_id: int, user: discord.abc.User, content: str, attachment_urls: list[str]
 ) -> bool:
-    """Neruskan DM customer (misal screenshot bukti bayar) ke channel
-    order-log, ditandain order ID dan customer-nya, jadi staff tau persis
-    siapa yang bayar buat apa tanpa customer perlu buka ticket. Return
-    False kalau channel order-log belum diatur."""
+    """Neruskan DM customer (bisa teks biasa, screenshot bukti bayar,
+    ATAU video -- misal nunjukin kendala produk) ke channel order-log,
+    ditandain order ID dan customer-nya, jadi staff tau persis siapa yang
+    ngomong apa tanpa customer perlu buka ticket. Return False kalau
+    channel order-log belum diatur."""
     db = bot.db
+    image_urls = [u for u in attachment_urls if not is_video_url(u)]
+    video_urls = [u for u in attachment_urls if is_video_url(u)]
 
-    if attachment_urls:
+    if image_urls:
         # Disimpen ke order duluan, LEPAS dari channel order-log udah
         # diatur apa belum -- ini yang dipake belakangan pas order
         # completed buat notif "Testi Money" (lihat mark_completed),
         # independen dari forward ke staff di bawah berhasil apa enggak.
-        await orders_q.set_payment_proof_url(db, order_id, attachment_urls[0])
+        # SENGAJA cuma gambar -- Testi Money itu representasi bukti
+        # transfer, video gak relevan buat itu meskipun boleh dikirim
+        # customer buat obrolan biasa sama staff.
+        await orders_q.set_payment_proof_url(db, order_id, image_urls[0])
 
     runtime = RuntimeSettings(db)
     log_channel_id = await runtime.order_log_channel_id()
@@ -97,12 +103,13 @@ async def forward_to_staff(
         content if content else "*(gak ada teks -- lihat lampiran)*",
     )
     embed.add_field(name="Customer", value=f"<@{user.id}> ({user})", inline=False)
-    if attachment_urls:
-        embed.set_image(url=attachment_urls[0])
-        if len(attachment_urls) > 1:
-            embed.add_field(
-                name="Lampiran Lainnya", value="\n".join(attachment_urls[1:]), inline=False
-            )
+    if image_urls:
+        # embed.set_image() CUMA nerima gambar -- video di slot ini bakal
+        # gagal render, makanya dipisah dari video_urls dari awal.
+        embed.set_image(url=image_urls[0])
+        extra_images = image_urls[1:]
+        if extra_images:
+            embed.add_field(name="Lampiran Lainnya", value="\n".join(extra_images), inline=False)
 
     # Import ditunda: bot.ui.views ngimport module ini di level atas (buat
     # OrderActionButton/ReplyButton), jadi kalau di-import balik di sini di
@@ -115,6 +122,15 @@ async def forward_to_staff(
 
     try:
         await channel.send(embed=embed, view=view)
+        # Video dikirim sebagai pesan TERPISAH (content polos, bukan
+        # embed.set_image() yang gak bisa nerima video) -- Discord
+        # otomatis nge-render player video-nya sendiri dari link mentah
+        # kayak gini, staff tinggal klik play langsung di channel.
+        for video_url in video_urls:
+            try:
+                await channel.send(content=video_url)
+            except discord.HTTPException:
+                logger.warning("Gagal forward video customer buat order #%s.", order_id)
         return True
     except discord.HTTPException:
         logger.exception("Gagal forward pesan customer buat order #%s.", order_id)
