@@ -29,6 +29,17 @@ def guild_scoped_key(base: str, guild_id: int) -> str:
     return f"{base}:{guild_id}"
 
 
+def is_video_url(url: str) -> bool:
+    """Deteksi kasar apakah URL attachment itu video, berdasarkan ekstensi
+    file-nya doang (bukan content_type, soalnya beberapa caller cuma punya
+    URL mentah di tangan, gak ada objek discord.Attachment aslinya lagi).
+    Dipake bot.utils.order_actions.forward_to_staff() biar video gak
+    dipaksain masuk slot embed.set_image() (yang cuma nerima gambar,
+    videonya bakal gagal render)."""
+    path = url.split("?")[0].lower()
+    return path.endswith((".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"))
+
+
 def calculate_final_price(
     base_price: float, discount_type: str | None, discount_value: float
 ) -> float:
