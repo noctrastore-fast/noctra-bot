@@ -268,23 +268,28 @@ def boost_container(
     color: int = COLOR_ACCENT,
 ) -> discord.ui.Container:
     """Card notifikasi server boost -- thumbnail avatar BOOSTER nempel ke
-    judul, pola sama persis kayak welcome_container() di atas. Total boost
-    server ditampilin sebagai blok terpisah (kayak join_block di welcome)
-    biar keliatan jelas kayak angka "achievement", bukan numpuk di
-    deskripsi. Soal mention/ping: sama kayak welcome_container, nyala/
-    matinya ping dikontrol dari LUAR (allowed_mentions pas channel.send,
-    lihat boost.py._send_boost), bukan dari sini."""
-    header_title = discord.ui.TextDisplay(f"## {title}")
-    header = discord.ui.Section(header_title, accessory=discord.ui.Thumbnail(media=member.display_avatar.url))
+    blok DESKRIPSI (bukan judul, beda dari welcome_container()) biar judul
+    dapet ruang penuh selebar card, gak keliatan mepet/kesempitan pas
+    disandingin thumbnail. Total boost server ditampilin sebagai blok
+    terpisah (angka doang, tanpa emoji) biar keliatan jelas kayak angka
+    "achievement", bukan numpuk di deskripsi. Soal mention/ping: sama kayak
+    welcome_container, nyala/matinya ping dikontrol dari LUAR
+    (allowed_mentions pas channel.send, lihat boost.py._send_boost), bukan
+    dari sini."""
+    title_display = discord.ui.TextDisplay(f"## {title}")
+    description_section = discord.ui.Section(
+        discord.ui.TextDisplay(description),
+        accessory=discord.ui.Thumbnail(media=member.display_avatar.url),
+    )
 
     boost_block = discord.ui.TextDisplay(
-        f"**Total Boost Server Sekarang**\n\U0001F4AA {total_boosts:,}"
+        f"**Total Boost Server Sekarang**\n{total_boosts:,}"
     )
 
     children: list = [
-        header,
+        title_display,
         discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small),
-        discord.ui.TextDisplay(description),
+        description_section,
         discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small),
         boost_block,
     ]
