@@ -256,6 +256,110 @@ def welcome_container(
     return discord.ui.Container(*children, accent_colour=color)
 
 
+# -- Notifikasi Server Boost -----------------------------------------------------
+
+def boost_container(
+    member: discord.Member,
+    title: str,
+    description: str,
+    footer_text: str,
+    total_boosts: int,
+    banner_url: str | None = None,
+    color: int = COLOR_ACCENT,
+) -> discord.ui.Container:
+    """Card notifikasi server boost -- thumbnail avatar BOOSTER nempel ke
+    judul, pola sama persis kayak welcome_container() di atas. Total boost
+    server ditampilin sebagai blok terpisah (kayak join_block di welcome)
+    biar keliatan jelas kayak angka "achievement", bukan numpuk di
+    deskripsi. Soal mention/ping: sama kayak welcome_container, nyala/
+    matinya ping dikontrol dari LUAR (allowed_mentions pas channel.send,
+    lihat boost.py._send_boost), bukan dari sini."""
+    header_title = discord.ui.TextDisplay(f"## {title}")
+    header = discord.ui.Section(header_title, accessory=discord.ui.Thumbnail(media=member.display_avatar.url))
+
+    boost_block = discord.ui.TextDisplay(
+        f"**Total Boost Server Sekarang**\n\U0001F4AA {total_boosts:,}"
+    )
+
+    children: list = [
+        header,
+        discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small),
+        discord.ui.TextDisplay(description),
+        discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small),
+        boost_block,
+    ]
+
+    if banner_url:
+        children.append(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
+        children.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner_url)))
+
+    if footer_text:
+        children.append(discord.ui.Separator(visible=False))
+        children.append(discord.ui.TextDisplay(f"-# {footer_text}"))
+
+    return discord.ui.Container(*children, accent_colour=color)
+
+
+# -- Giveaway ---------------------------------------------------------------------
+
+_COLOR_GIVEAWAY_ENDED = 0x5A5A5A  # abu-abu netral -- giveaway berakhir gak pake warna aksen custom staff lagi
+
+
+def giveaway_container(giveaway_row, entry_count: int) -> discord.ui.Container:
+    """Card giveaway publik yang lagi AKTIF -- caller (bot.ui.views) yang
+    nempelin ActionRow tombol Join (GiveawayJoinButton), soalnya butuh
+    custom_id dinamis + gaya tombol (warna/emoji/label) yang staff atur
+    sendiri pas /giveaway create. Kartu ini di-edit-in-place tiap ada yang
+    join/leave biar jumlah peserta keliatan real-time."""
+    title_text = discord.ui.TextDisplay(f"## \U0001F389 {giveaway_row['title']}")
+
+    ends_ts = int(datetime.fromisoformat(giveaway_row["ends_at"]).timestamp())
+    info_lines = [
+        f"**Hadiah**\n{giveaway_row['prize']}",
+        f"**Jumlah Pemenang**\n{giveaway_row['winner_count']}",
+        f"**Berakhir**\n<t:{ends_ts}:F>  ({MARK_DASH} <t:{ends_ts}:R>)",
+        f"**Peserta**\n{entry_count} orang",
+        f"**Host**\n<@{giveaway_row['host_user_id']}>",
+    ]
+    if giveaway_row["win_role_id"]:
+        info_lines.append(f"**Role Hadiah**\n<@&{giveaway_row['win_role_id']}>")
+
+    children: list = [title_text]
+    if giveaway_row["description"]:
+        children.append(discord.ui.TextDisplay(giveaway_row["description"]))
+    children.append(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
+    children.append(discord.ui.TextDisplay("\n\n".join(info_lines)))
+    children.append(discord.ui.Separator(visible=False))
+    children.append(discord.ui.TextDisplay(_footer_line(f"Giveaway #{giveaway_row['id']}")))
+
+    color = giveaway_row["color"] if giveaway_row["color"] is not None else COLOR_ACCENT
+    return discord.ui.Container(*children, accent_colour=color)
+
+
+def giveaway_ended_container(giveaway_row, winner_ids: list[int]) -> discord.ui.Container:
+    """Card giveaway yang UDAH berakhir -- gantiin tombol Join dengan hasil
+    pemenang. Dipake bot.utils.giveaway_actions.end_giveaway() buat
+    edit-in-place kartu yang lagi aktif jadi ini."""
+    title_text = discord.ui.TextDisplay(f"## \U0001F3C6 {giveaway_row['title']} -- Berakhir")
+
+    if winner_ids:
+        winners_text = ", ".join(f"<@{uid}>" for uid in winner_ids)
+        result_line = f"**Pemenang**\n{winners_text}"
+    else:
+        result_line = "**Pemenang**\nGak ada peserta yang valid -- giveaway ini gak ada pemenangnya."
+
+    info = discord.ui.TextDisplay(f"**Hadiah**\n{giveaway_row['prize']}\n\n{result_line}")
+
+    children = [
+        title_text,
+        discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small),
+        info,
+        discord.ui.Separator(visible=False),
+        discord.ui.TextDisplay(_footer_line(f"Giveaway #{giveaway_row['id']}")),
+    ]
+    return discord.ui.Container(*children, accent_colour=_COLOR_GIVEAWAY_ENDED)
+
+
 # -- Review publik & bukti foto -------------------------------------------------
 
 def review_card_container(

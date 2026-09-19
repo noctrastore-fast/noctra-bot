@@ -43,6 +43,7 @@ from bot.database.queries import (
     tickets as tickets_q,
 )
 from bot.database.queries import cards as cards_q
+from bot.database.queries import giveaways as giveaways_q
 from bot.ui import components, embeds
 from bot.ui.modals import MessageModal, ReasonModal, ReviewTextModal, collect_dynamic_fields
 from bot.utils import card_actions, order_actions, ticket_actions
@@ -1563,3 +1564,96 @@ class PendingOrderSelectView(discord.ui.View):
     def __init__(self, orders: list, content: str, attachment_urls: list[str]) -> None:
         super().__init__(timeout=300)
         self.add_item(PendingOrderSelect(orders, content, attachment_urls))
+
+
+# ============================================================================
+# GIVEAWAY -- tombol Join persistent (custom_id dinamis, restart-safe sama
+# triknya kayak OrderActionButton/CardRequestActionButton di atas). Gaya
+# tombol (label/warna/emoji) direkonstruksi dari tabel `giveaways` tiap kali
+# dipanggil balik, soalnya staff bisa custom semua itu pas /giveaway create.
+# ============================================================================
+
+GIVEAWAY_BUTTON_STYLES = {
+    "primary": discord.ButtonStyle.primary,
+    "secondary": discord.ButtonStyle.secondary,
+    "success": discord.ButtonStyle.success,
+    "danger": discord.ButtonStyle.danger,
+}
+
+
+class GiveawayJoinButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"noctra:giveaway:join:(?P<giveaway_id>[0-9]+)",
+):
+    def __init__(
+        self,
+        giveaway_id: int,
+        label: str,
+        style: discord.ButtonStyle,
+        emoji: discord.PartialEmoji | None = None,
+    ) -> None:
+        super().__init__(
+            discord.ui.Button(
+                label=label[:80],
+                style=style,
+                emoji=emoji,
+                custom_id=f"noctra:giveaway:join:{giveaway_id}",
+            )
+        )
+        self.giveaway_id = giveaway_id
+
+    @classmethod
+    def from_giveaway_row(cls, giveaway) -> "GiveawayJoinButton":
+        emoji = discord.PartialEmoji.from_str(giveaway["button_emoji"]) if giveaway["button_emoji"] else None
+        style = GIVEAWAY_BUTTON_STYLES.get(giveaway["button_style"], discord.ButtonStyle.primary)
+        return cls(giveaway["id"], giveaway["button_label"], style, emoji)
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):  # noqa: D102
+        giveaway_id = int(match["giveaway_id"])
+        db = interaction.client.db  # type: ignore[attr-defined]
+        giveaway = await giveaways_q.get_giveaway(db, giveaway_id)
+        if giveaway is None:
+            return cls(giveaway_id, "Ikut Giveaway", discord.ButtonStyle.primary)
+        return cls.from_giveaway_row(giveaway)
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        db = interaction.client.db  # type: ignore[attr-defined]
+        giveaway = await giveaways_q.get_giveaway(db, self.giveaway_id)
+        if giveaway is None or giveaway["status"] != "active":
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Giveaway ini udah gak aktif lagi."), ephemeral=True
+            )
+            return
+
+        joined = await giveaways_q.has_entered(db, self.giveaway_id, interaction.user.id)
+        if joined:
+            await giveaways_q.remove_entry(db, self.giveaway_id, interaction.user.id)
+            feedback = embeds.success_embed("Kamu keluar dari giveaway ini.")
+        else:
+            await giveaways_q.add_entry(db, self.giveaway_id, interaction.user.id)
+            feedback = embeds.success_embed("Kamu berhasil ikutan giveaway ini! Semoga beruntung \U0001F340")
+        await interaction.response.send_message(embed=feedback, ephemeral=True)
+
+        # Update jumlah peserta di kartu giveaway biar keliatan real-time,
+        # tanpa nunggu staff refresh manual.
+        count = await giveaways_q.count_entries(db, self.giveaway_id)
+        try:
+            container = components.giveaway_container(giveaway, count)
+            new_button = GiveawayJoinButton.from_giveaway_row(giveaway)
+            view = GiveawayView(container, new_button)
+            if interaction.message:
+                await interaction.message.edit(view=view)
+        except discord.HTTPException:
+            logger.exception("Gagal update kartu giveaway #%s abis join/leave.", self.giveaway_id)
+
+
+class GiveawayView(discord.ui.LayoutView):
+    """Kartu giveaway aktif -- Components V2, pola sama kayak
+    ProductDetailView/ShopPanelView: container dari components.py +
+    ActionRow tombol Join ditempel di sini."""
+
+    def __init__(self, container: discord.ui.Container, join_button: GiveawayJoinButton) -> None:
+        super().__init__(timeout=None)
+        container.add_item(discord.ui.ActionRow(join_button))
+        self.add_item(container)
