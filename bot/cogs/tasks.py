@@ -4,6 +4,8 @@ Background loop:
   * Auto-archive ticket yang udah inaktif lewat batas waktu yang diatur.
   * Bersihin flag awaiting-photo review yang basi (customer gak pernah
     kirim foto dan gak klik Lewati -- dibersihin abis PHOTO_WINDOW_MINUTES).
+  * Akhirin giveaway otomatis begitu waktunya abis (pilih pemenang, kasih
+    win-role, update kartu jadi status berakhir).
 """
 
 from __future__ import annotations
@@ -12,12 +14,13 @@ import discord
 from discord.ext import commands, tasks
 
 from bot.core.logger import logger
+from bot.database.queries import giveaways as giveaways_q
 from bot.database.queries import orders as orders_q
 from bot.database.queries import products as products_q
 from bot.database.queries import reviews as reviews_q
 from bot.database.queries import tickets as tickets_q
 from bot.ui import embeds
-from bot.utils import ticket_actions
+from bot.utils import giveaway_actions, ticket_actions
 from bot.utils.helpers import RuntimeSettings
 
 
@@ -27,11 +30,13 @@ class TasksCog(commands.Cog):
         self.expire_payments.start()
         self.auto_archive_tickets.start()
         self.clear_stale_photo_windows.start()
+        self.end_expired_giveaways.start()
 
     def cog_unload(self) -> None:
         self.expire_payments.cancel()
         self.auto_archive_tickets.cancel()
         self.clear_stale_photo_windows.cancel()
+        self.end_expired_giveaways.cancel()
 
     @tasks.loop(minutes=2)
     async def expire_payments(self) -> None:
@@ -87,9 +92,23 @@ class TasksCog(commands.Cog):
         except Exception:  # noqa: BLE001
             logger.exception("Error di task clear_stale_photo_windows.")
 
+    @tasks.loop(minutes=1)
+    async def end_expired_giveaways(self) -> None:
+        """Cek tiap menit giveaway yang ends_at-nya udah lewat tapi
+        statusnya masih 'active', terus akhirin otomatis (pilih pemenang,
+        kasih win-role, update kartu jadi status berakhir)."""
+        try:
+            db = self.bot.db
+            expired = await giveaways_q.list_expired_active_giveaways(db)
+            for giveaway in expired:
+                await giveaway_actions.end_giveaway(self.bot, giveaway["id"])
+        except Exception:  # noqa: BLE001
+            logger.exception("Error di task end_expired_giveaways.")
+
     @expire_payments.before_loop
     @auto_archive_tickets.before_loop
     @clear_stale_photo_windows.before_loop
+    @end_expired_giveaways.before_loop
     async def _before(self) -> None:
         await self.bot.wait_until_ready()
 
