@@ -203,3 +203,47 @@ CREATE TABLE IF NOT EXISTS panel_drafts (
     draft_json  TEXT NOT NULL,
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Giveaway. Tombol Join persistent (custom_id encode giveaway_id doang,
+-- gaya tombol -- label/warna/emoji -- direkonstruksi dari row ini tiap
+-- restart, sama triknya kayak card_requests). status: active -> ended.
+-- win_role_id opsional -- kalau diisi, otomatis di-assign ke user_id
+-- pemenang pas giveaway berakhir (lihat bot.utils.giveaway_actions).
+CREATE TABLE IF NOT EXISTS giveaways (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id          INTEGER NOT NULL,
+    channel_id        INTEGER NOT NULL,
+    message_id        INTEGER,
+    host_user_id      INTEGER NOT NULL,
+    title             TEXT NOT NULL,
+    description       TEXT,
+    prize             TEXT NOT NULL,
+    winner_count      INTEGER NOT NULL DEFAULT 1,
+    win_role_id       INTEGER,
+    button_label      TEXT NOT NULL DEFAULT 'Ikut Giveaway',
+    button_style      TEXT NOT NULL DEFAULT 'primary',  -- primary|secondary|success|danger
+    button_emoji      TEXT,
+    color             INTEGER,
+    status            TEXT NOT NULL DEFAULT 'active',   -- active|ended
+    ends_at           TEXT NOT NULL,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    ended_at          TEXT
+);
+
+CREATE TABLE IF NOT EXISTS giveaway_entries (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    giveaway_id   INTEGER NOT NULL REFERENCES giveaways(id) ON DELETE CASCADE,
+    user_id       INTEGER NOT NULL,
+    entered_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(giveaway_id, user_id)
+);
+
+-- Dipisah dari giveaway_entries (bukan sekadar flag di situ) biar
+-- /giveaway reroll bisa nimpa daftar pemenang tanpa ilangin data siapa
+-- aja yang tadinya ikutan.
+CREATE TABLE IF NOT EXISTS giveaway_winners (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    giveaway_id   INTEGER NOT NULL REFERENCES giveaways(id) ON DELETE CASCADE,
+    user_id       INTEGER NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);

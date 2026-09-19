@@ -65,6 +65,8 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status, payment_status)",
             "CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status)",
             "CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id, status)",
+            "CREATE INDEX IF NOT EXISTS idx_giveaways_status ON giveaways(status)",
+            "CREATE INDEX IF NOT EXISTS idx_giveaway_entries_giveaway ON giveaway_entries(giveaway_id)",
         ]
         for statement in statements:
             try:
