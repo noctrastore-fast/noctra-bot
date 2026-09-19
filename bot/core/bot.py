@@ -32,6 +32,8 @@ EXTENSIONS = (
     "bot.cogs.advertisement",
     "bot.cogs.welcome",
     "bot.cogs.backup",
+    "bot.cogs.boost",
+    "bot.cogs.giveaway",
 )
 
 
@@ -140,15 +142,23 @@ class NoctraBot(commands.Bot):
         logger.info("Persistent views registered.")
 
     def _register_dynamic_items(self) -> None:
-        # Dynamic items (order_id/rating encoded directly in the custom_id)
-        # are registered by class, not instance -- discord.py reconstructs
-        # the right button on demand whenever a matching custom_id comes in,
-        # so this survives restarts with no per-order bookkeeping needed.
-        from bot.ui.views import OrderActionButton, ReplyButton, ReviewStartButton, CardRequestActionButton
+        # Dynamic items (order_id/rating/giveaway_id encoded directly in the
+        # custom_id) are registered by class, not instance -- discord.py
+        # reconstructs the right button on demand whenever a matching
+        # custom_id comes in, so this survives restarts with no per-order
+        # bookkeeping needed.
+        from bot.ui.views import (
+            OrderActionButton,
+            ReplyButton,
+            ReviewStartButton,
+            CardRequestActionButton,
+            GiveawayJoinButton,
+        )
         from bot.ui.panel_reply_button import PanelReplyButton
 
         self.add_dynamic_items(
-            OrderActionButton, ReviewStartButton, ReplyButton, PanelReplyButton, CardRequestActionButton
+            OrderActionButton, ReviewStartButton, ReplyButton, PanelReplyButton,
+            CardRequestActionButton, GiveawayJoinButton,
         )
         logger.info("Dynamic items registered.")
 
