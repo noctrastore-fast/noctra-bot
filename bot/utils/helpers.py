@@ -227,6 +227,46 @@ class RuntimeSettings:
         except ValueError:
             return None
 
+    # -- Notifikasi Server Boost (/boost) --------------------------------------
+    # Per-guild, sama pola kayak /welcome di atas -- lihat guild_scoped_key().
+
+    async def boost_enabled(self, guild_id: int) -> bool:
+        value = await self._get(guild_scoped_key("boost_enabled", guild_id), "0")
+        return str(value) == "1"
+
+    async def boost_channel_id(self, guild_id: int) -> int | None:
+        value = await self._get(guild_scoped_key("boost_channel_id", guild_id), None)
+        return int(value) if value else None
+
+    async def boost_mention_enabled(self, guild_id: int) -> bool:
+        value = await self._get(guild_scoped_key("boost_mention_enabled", guild_id), "0")
+        return str(value) == "1"
+
+    async def boost_title(self, guild_id: int) -> str | None:
+        value = await self._get(guild_scoped_key("boost_title", guild_id), None)
+        return value or None
+
+    async def boost_description(self, guild_id: int) -> str | None:
+        value = await self._get(guild_scoped_key("boost_description", guild_id), None)
+        return value or None
+
+    async def boost_banner_url(self, guild_id: int) -> str | None:
+        value = await self._get(guild_scoped_key("boost_banner_url", guild_id), None)
+        return value or None
+
+    async def boost_footer_text(self, guild_id: int) -> str | None:
+        value = await self._get(guild_scoped_key("boost_footer_text", guild_id), None)
+        return value or None
+
+    async def boost_color(self, guild_id: int) -> int | None:
+        value = await self._get(guild_scoped_key("boost_color", guild_id), None)
+        if not value:
+            return None
+        try:
+            return int(str(value))
+        except ValueError:
+            return None
+
     # -- Auto join-role (/joinrole) --------------------------------------------
     # Sama kayak /welcome di atas -- per-guild, lihat guild_scoped_key().
 
