@@ -259,6 +259,8 @@ CREATE TABLE IF NOT EXISTS shipment_proofs (
     message_id        INTEGER,
     staff_user_id     INTEGER NOT NULL,
     customer_user_id  INTEGER NOT NULL,
+    category          TEXT NOT NULL DEFAULT '',
+    product           TEXT NOT NULL DEFAULT '',
     shipped_date      TEXT NOT NULL,
     status            TEXT NOT NULL,
     photo_url         TEXT NOT NULL,
