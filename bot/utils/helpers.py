@@ -286,6 +286,14 @@ class RuntimeSettings:
         value = await self._get(guild_scoped_key("shipment_emoji_customer", guild_id), None)
         return value or None
 
+    async def shipment_emoji_category(self, guild_id: int) -> str | None:
+        value = await self._get(guild_scoped_key("shipment_emoji_category", guild_id), None)
+        return value or None
+
+    async def shipment_emoji_product(self, guild_id: int) -> str | None:
+        value = await self._get(guild_scoped_key("shipment_emoji_product", guild_id), None)
+        return value or None
+
     async def shipment_emoji_status(self, guild_id: int) -> str | None:
         value = await self._get(guild_scoped_key("shipment_emoji_status", guild_id), None)
         return value or None
