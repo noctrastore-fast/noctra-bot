@@ -247,3 +247,20 @@ CREATE TABLE IF NOT EXISTS giveaway_winners (
     user_id       INTEGER NOT NULL,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Bukti pengiriman barang yang diposting staff lewat /shipment kirim --
+-- disimpen buat riwayat/audit (/shipment log), BUKAN alur approval kayak
+-- reviews/card_requests -- begitu diposting langsung final, gak ada
+-- status pending/approved di sini.
+CREATE TABLE IF NOT EXISTS shipment_proofs (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id          INTEGER NOT NULL,
+    channel_id        INTEGER NOT NULL,
+    message_id        INTEGER,
+    staff_user_id     INTEGER NOT NULL,
+    customer_user_id  INTEGER NOT NULL,
+    shipped_date      TEXT NOT NULL,
+    status            TEXT NOT NULL,
+    photo_url         TEXT NOT NULL,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
