@@ -34,6 +34,7 @@ EXTENSIONS = (
     "bot.cogs.backup",
     "bot.cogs.boost",
     "bot.cogs.giveaway",
+    "bot.cogs.shipment",
 )
 
 
