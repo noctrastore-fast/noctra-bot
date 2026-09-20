@@ -267,6 +267,29 @@ class RuntimeSettings:
         except ValueError:
             return None
 
+    # -- Bukti Pengiriman Barang (/shipment) -----------------------------------
+    # Per-guild, sama pola kayak /welcome & /boost -- lihat guild_scoped_key().
+
+    async def shipment_channel_id(self, guild_id: int) -> int | None:
+        value = await self._get(guild_scoped_key("shipment_channel_id", guild_id), None)
+        return int(value) if value else None
+
+    async def shipment_emoji_title(self, guild_id: int) -> str | None:
+        value = await self._get(guild_scoped_key("shipment_emoji_title", guild_id), None)
+        return value or None
+
+    async def shipment_emoji_date(self, guild_id: int) -> str | None:
+        value = await self._get(guild_scoped_key("shipment_emoji_date", guild_id), None)
+        return value or None
+
+    async def shipment_emoji_customer(self, guild_id: int) -> str | None:
+        value = await self._get(guild_scoped_key("shipment_emoji_customer", guild_id), None)
+        return value or None
+
+    async def shipment_emoji_status(self, guild_id: int) -> str | None:
+        value = await self._get(guild_scoped_key("shipment_emoji_status", guild_id), None)
+        return value or None
+
     # -- Auto join-role (/joinrole) --------------------------------------------
     # Sama kayak /welcome di atas -- per-guild, lihat guild_scoped_key().
 
