@@ -473,3 +473,42 @@ def testi_proof_container(
         accent_colour=COLOR_PRIMARY,
     )
     return container
+
+
+# -- Bukti Pengiriman Barang -------------------------------------------------
+
+def shipment_proof_container(
+    customer_display: str,
+    shipped_date: str,
+    status_label: str,
+    photo_url: str,
+    emoji_title: str,
+    emoji_date: str,
+    emoji_customer: str,
+    emoji_status: str,
+    color: int = COLOR_PRIMARY,
+) -> discord.ui.Container:
+    """Card bukti pengiriman barang -- staff-only, diposting manual lewat
+    /shipment kirim. Pola SAMA PERSIS kayak testi_proof_container di atas:
+    judul + blok detail (tiap baris punya emoji sendiri, staff yang atur
+    lewat /shipment emoji -- boleh emoji custom dari SERVER LAIN sekalipun,
+    soalnya cuma disimpen apa adanya sebagai kode emoji mentah, gak
+    divalidasi harus emoji milik server ini) + foto jadi thumbnail di
+    sampingnya. `color` beda-beda sesuai status (lihat STATUS_CHOICES di
+    bot.cogs.shipment) -- hijau kalau udah sampai, merah kalau dibatalin,
+    dst, biar staff bisa liat sekilas dari warnanya doang."""
+    header = discord.ui.TextDisplay(f"## {emoji_title} BUKTI PENGIRIMAN BARANG")
+
+    detail_block = discord.ui.TextDisplay(
+        f"{emoji_date} **Tanggal Pengiriman** : {shipped_date}\n"
+        f"{emoji_customer} **Customer** : {customer_display}\n"
+        f"{emoji_status} **Status Pengiriman** : {status_label}"
+    )
+    detail_section = discord.ui.Section(detail_block, accessory=discord.ui.Thumbnail(media=photo_url))
+
+    return discord.ui.Container(
+        header,
+        discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small),
+        detail_section,
+        accent_colour=color,
+    )
