@@ -12,6 +12,8 @@ async def create_proof(
     channel_id: int,
     staff_user_id: int,
     customer_user_id: int,
+    category: str,
+    product: str,
     shipped_date: str,
     status: str,
     photo_url: str,
@@ -19,10 +21,14 @@ async def create_proof(
     return await db.execute(
         """
         INSERT INTO shipment_proofs
-            (guild_id, channel_id, staff_user_id, customer_user_id, shipped_date, status, photo_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (guild_id, channel_id, staff_user_id, customer_user_id, category,
+             product, shipped_date, status, photo_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (guild_id, channel_id, staff_user_id, customer_user_id, shipped_date, status, photo_url),
+        (
+            guild_id, channel_id, staff_user_id, customer_user_id, category,
+            product, shipped_date, status, photo_url,
+        ),
     )
 
 
