@@ -5,6 +5,13 @@ Disentralisasi di sini (bukan di View atau Cog) biar tombol close,
 command slash /ticket, dan background task auto-archive semua bisa
 makai logic yang persis sama tanpa circular import antara bot.ui dan
 bot.cogs.
+
+Sadar `ticket_types` (/ticket type) -- tiap kind ticket BOLEH punya
+kategori/log-channel/kategori-arsip sendiri kalau staff udah setup lewat
+/ticket type add. Kalau belum diatur (atau kind-nya emang gak pernah
+didaftarin, kayak "support" bawaan), fallback ke setting global
+(RuntimeSettings) apa adanya -- jadi perilaku LAMA (sebelum fitur
+ticket_types ada) tetep persis sama, gak ada yang berubah/rusak.
 """
 
 from __future__ import annotations
@@ -12,6 +19,7 @@ from __future__ import annotations
 import discord
 
 from bot.core.logger import logger
+from bot.database.queries import ticket_types as ticket_types_q
 from bot.database.queries import tickets as tickets_q
 from bot.ui import embeds
 from bot.utils.helpers import RuntimeSettings
@@ -29,7 +37,9 @@ async def create_ticket_channel(
     db = bot.db
     runtime = RuntimeSettings(db)
 
-    category_id = await runtime.ticket_category_id()
+    ticket_type = await ticket_types_q.get_by_slug(db, guild.id, kind)
+
+    category_id = (ticket_type["category_id"] if ticket_type else None) or await runtime.ticket_category_id()
     category = guild.get_channel(category_id) if category_id else None
     if not isinstance(category, discord.CategoryChannel):
         category = None
@@ -83,13 +93,17 @@ async def close_ticket(
     status = "archived" if auto else "closed"
     await tickets_q.set_ticket_status(db, channel.id, status, reason)
 
+    ticket_type = (
+        await ticket_types_q.get_by_slug(db, channel.guild.id, ticket["kind"]) if ticket else None
+    )
+
     try:
         transcript_file = await build_html_transcript(channel)
     except Exception:  # noqa: BLE001
         logger.exception("Gagal bikin transcript buat #%s", channel.name)
         transcript_file = None
 
-    log_channel_id = await runtime.ticket_log_channel_id()
+    log_channel_id = (ticket_type["log_channel_id"] if ticket_type else None) or await runtime.ticket_log_channel_id()
     if log_channel_id:
         log_channel = bot.get_channel(log_channel_id)
         if isinstance(log_channel, discord.TextChannel):
@@ -130,7 +144,9 @@ async def close_ticket(
     # udah ditutup gak cuma diem di tempat yang sama tanpa perubahan --
     # ini berlaku BAIK buat klik manual "Close Ticket" MAUPUN task
     # auto-archive karena inaktif, bukan cuma yang belakangan.
-    archive_category_id = await runtime.ticket_archive_category_id()
+    archive_category_id = (
+        ticket_type["archive_category_id"] if ticket_type else None
+    ) or await runtime.ticket_archive_category_id()
     if archive_category_id:
         archive_category = channel.guild.get_channel(archive_category_id)
         if isinstance(archive_category, discord.CategoryChannel):
@@ -170,7 +186,8 @@ async def reopen_ticket(bot, channel: discord.TextChannel, reopened_by_display: 
         except discord.HTTPException:
             logger.exception("Gagal rename #%s pas reopen.", channel.name)
 
-    ticket_category_id = await runtime.ticket_category_id()
+    ticket_type = await ticket_types_q.get_by_slug(db, channel.guild.id, ticket["kind"])
+    ticket_category_id = (ticket_type["category_id"] if ticket_type else None) or await runtime.ticket_category_id()
     if ticket_category_id:
         ticket_category = channel.guild.get_channel(ticket_category_id)
         if isinstance(ticket_category, discord.CategoryChannel):
