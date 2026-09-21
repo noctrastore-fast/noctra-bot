@@ -131,6 +131,7 @@ class NoctraBot(commands.Bot):
             TicketClaimedView,
             TicketControlView,
             TicketReopenView,
+            TicketTypeSelectView,
             CardPanelView,
         )
 
@@ -139,6 +140,7 @@ class NoctraBot(commands.Bot):
         self.add_view(TicketClaimedView())
         self.add_view(TicketReopenView())
         self.add_view(OpenTicketPanelView())
+        self.add_view(TicketTypeSelectView())
         self.add_view(CardPanelView())
         logger.info("Persistent views registered.")
 
