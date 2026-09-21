@@ -68,6 +68,7 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_giveaways_status ON giveaways(status)",
             "CREATE INDEX IF NOT EXISTS idx_giveaway_entries_giveaway ON giveaway_entries(giveaway_id)",
             "CREATE INDEX IF NOT EXISTS idx_shipment_proofs_guild ON shipment_proofs(guild_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_ticket_types_guild ON ticket_types(guild_id)",
         ]
         for statement in statements:
             try:
