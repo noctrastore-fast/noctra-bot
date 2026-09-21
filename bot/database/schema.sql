@@ -266,3 +266,26 @@ CREATE TABLE IF NOT EXISTS shipment_proofs (
     photo_url         TEXT NOT NULL,
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Jenis-jenis ticket per server (Customer Service, Konsultasi, dst) --
+-- staff atur lewat /ticket type add. `slug` dipake sebagai `kind` di
+-- tabel tickets & prefix nama channel, jadi divalidasi lowercase/
+-- slug-safe di bot.cogs.ticket sebelum disimpen ke sini.
+-- category_id/archive_category_id/log_channel_id BOLEH kosong -- kalau
+-- kosong, bot.utils.ticket_actions fallback ke setting global (/settings)
+-- kayak sebelum fitur ini ada, jadi "support" bawaan tetep aman.
+CREATE TABLE IF NOT EXISTS ticket_types (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id              INTEGER NOT NULL,
+    slug                  TEXT NOT NULL,
+    label                 TEXT NOT NULL,
+    description           TEXT,
+    emoji                 TEXT,
+    category_id           INTEGER,
+    archive_category_id   INTEGER,
+    log_channel_id        INTEGER,
+    position              INTEGER NOT NULL DEFAULT 0,
+    enabled               INTEGER NOT NULL DEFAULT 1,
+    created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(guild_id, slug)
+);
