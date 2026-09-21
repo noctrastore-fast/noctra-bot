@@ -273,4 +273,4 @@ class TicketCog(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(TicketCog(bot))a
+    await bot.add_cog(TicketCog(bot))
