@@ -44,6 +44,7 @@ from bot.database.queries import (
 )
 from bot.database.queries import cards as cards_q
 from bot.database.queries import giveaways as giveaways_q
+from bot.database.queries import ticket_types as ticket_types_q
 from bot.ui import components, embeds
 from bot.ui.modals import MessageModal, ReasonModal, ReviewTextModal, collect_dynamic_fields
 from bot.utils import card_actions, order_actions, ticket_actions
@@ -1042,6 +1043,74 @@ class OpenTicketPanelView(discord.ui.View):
         )
         await interaction.followup.send(
             embed=embeds.success_embed(f"Ticket kamu udah dibuat: {channel.mention}"), ephemeral=True
+        )
+
+
+class TicketTypeSelectView(discord.ui.View):
+    """Panel DROPDOWN buat pilih jenis ticket (Customer Service, Konsultasi,
+    dst -- diatur staff lewat /ticket type). Persistent: custom_id-nya
+    tetap ("noctra:ticket:type_select"), dan opsi yang KELIATAN ke user
+    ke-simpen di pesan Discord itu sendiri (server-side), jadi tetep sama
+    abis bot restart -- bot cuma perlu tetep bisa nangkep event-nya lewat
+    custom_id yang sama pas didaftarin balik lewat add_view() di
+    setup_hook(). Kalau daftar ticket_types berubah (nambah/ngurangin
+    jenis), staff perlu posting ulang panelnya (`/ticket panel_types`)
+    biar dropdown yang lama ke-update ngikutin.
+
+    `ticket_types` dikosongin (None/[]) pas didaftarin ulang di
+    setup_hook() -- itu instance CUMA buat nangkep interaksi dari pesan
+    LAMA yang udah keposting, bukan buat ditampilin lagi, jadi opsi
+    placeholder di situ gak masalah gak kepake."""
+
+    def __init__(self, ticket_types: list | None = None) -> None:
+        super().__init__(timeout=None)
+        options = [
+            discord.SelectOption(
+                label=t["label"][:100],
+                value=t["slug"],
+                description=(t["description"] or "")[:100] or None,
+                emoji=discord.PartialEmoji.from_str(t["emoji"]) if t["emoji"] else None,
+            )
+            for t in (ticket_types or [])
+        ] or [discord.SelectOption(label="Belum ada jenis ticket diatur", value="_none")]
+        self.select_ticket_type.options = options
+
+    @discord.ui.select(
+        placeholder="Pilih jenis ticket...",
+        custom_id="noctra:ticket:type_select",
+        min_values=1,
+        max_values=1,
+        options=[discord.SelectOption(label="Placeholder", value="_placeholder")],
+    )
+    async def select_ticket_type(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
+        slug = select.values[0]
+        if slug in ("_none", "_placeholder"):
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Belum ada jenis ticket yang diatur staff."), ephemeral=True
+            )
+            return
+
+        db = interaction.client.db  # type: ignore[attr-defined]
+        ticket_type = await ticket_types_q.get_by_slug(db, interaction.guild_id, slug)
+        if ticket_type is None or not ticket_type["enabled"]:
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Jenis ticket ini udah gak aktif -- coba pilih yang lain atau hubungi staff."),
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        channel = await ticket_actions.create_ticket_channel(
+            interaction.client, interaction.guild, interaction.user, slug
+        )
+        await channel.send(
+            content=interaction.user.mention,
+            embed=embeds.ticket_welcome_embed(),
+            view=TicketControlView(),
+        )
+        await interaction.followup.send(
+            embed=embeds.success_embed(f"Ticket **{ticket_type['label']}** kamu udah dibuat: {channel.mention}"),
+            ephemeral=True,
         )
 
 
