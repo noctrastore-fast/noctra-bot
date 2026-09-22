@@ -519,3 +519,63 @@ def shipment_proof_container(
         detail_section,
         accent_colour=color,
     )
+
+
+# -- Panel Dropdown Jenis Ticket ----------------------------------------------
+
+def ticket_type_panel_container(
+    *,
+    title: str,
+    description: str,
+    select_item: discord.ui.Select,
+    thumbnail_url: str | None = None,
+    banner_url: str | None = None,
+    footer_text: str | None = None,
+    footer_icon_url: str | None = None,
+    color: int = COLOR_PRIMARY,
+) -> discord.ui.Container:
+    """Card panel buka ticket -- Components V2, SENGAJA beda tata letak
+    dari /ticket panel yang lama (embed biasa) biar keliatan beda: judul
+    di atas -> pemisah -> deskripsi (sejajar thumbnail kalau diisi) ->
+    pemisah -> dropdown jenis ticket -> pemisah -> banner (kalau diisi) ->
+    pemisah -> footer (teks + ikon kecil, kalau diisi). Blok-blok yang
+    opsional (thumbnail/banner/footer) DIHILANGIN kalau gak diisi staff --
+    bukan ditampilin kosong -- biar gak ada spasi/pemisah nganggur.
+
+    `select_item` (dropdown-nya) ditempel LANGSUNG di sini lewat
+    ActionRow supaya nempel di DALAM container (bukan ngambang keluar
+    kartu), sama pola kayak GiveawayView nempelin tombol Join di
+    bot.ui.views."""
+    children: list = [
+        discord.ui.TextDisplay(f"## {title}"),
+        discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small),
+    ]
+
+    if thumbnail_url:
+        children.append(
+            discord.ui.Section(
+                discord.ui.TextDisplay(description),
+                accessory=discord.ui.Thumbnail(media=thumbnail_url),
+            )
+        )
+    else:
+        children.append(discord.ui.TextDisplay(description))
+    children.append(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
+
+    children.append(discord.ui.ActionRow(select_item))
+    children.append(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
+
+    if banner_url:
+        children.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner_url)))
+        children.append(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
+
+    if footer_text or footer_icon_url:
+        footer_display = discord.ui.TextDisplay(f"-# {footer_text}" if footer_text else "-# \u200b")
+        if footer_icon_url:
+            children.append(
+                discord.ui.Section(footer_display, accessory=discord.ui.Thumbnail(media=footer_icon_url))
+            )
+        else:
+            children.append(footer_display)
+
+    return discord.ui.Container(*children, accent_colour=color)
