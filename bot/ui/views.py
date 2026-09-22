@@ -1046,23 +1046,40 @@ class OpenTicketPanelView(discord.ui.View):
         )
 
 
-class TicketTypeSelectView(discord.ui.View):
+class TicketTypeSelectView(discord.ui.LayoutView):
     """Panel DROPDOWN buat pilih jenis ticket (Customer Service, Konsultasi,
-    dst -- diatur staff lewat /ticket type). Persistent: custom_id-nya
-    tetap ("noctra:ticket:type_select"), dan opsi yang KELIATAN ke user
+    dst -- diatur staff lewat /ticket type). Components V2 (lihat
+    bot.ui.components.ticket_type_panel_container), BUKAN embed biasa
+    kayak OpenTicketPanelView yang lama -- tata letaknya sengaja beda:
+    judul di atas, deskripsi sejajar thumbnail, dropdown, banner, footer
+    (teks + ikon), masing-masing dipisah garis.
+
+    Persistent: custom_id-nya tetap ("noctra:ticket:type_select"), dan
+    SELURUH tampilan (judul/deskripsi/banner/footer/opsi dropdown)
     ke-simpen di pesan Discord itu sendiri (server-side), jadi tetep sama
     abis bot restart -- bot cuma perlu tetep bisa nangkep event-nya lewat
     custom_id yang sama pas didaftarin balik lewat add_view() di
-    setup_hook(). Kalau daftar ticket_types berubah (nambah/ngurangin
-    jenis), staff perlu posting ulang panelnya (`/ticket panel_types`)
-    biar dropdown yang lama ke-update ngikutin.
+    setup_hook(). Kalau daftar ticket_types ATAU tampilan panel berubah,
+    staff perlu posting ulang panelnya (`/ticket panel_types`) biar kartu
+    yang lama ke-update ngikutin.
 
     `ticket_types` dikosongin (None/[]) pas didaftarin ulang di
     setup_hook() -- itu instance CUMA buat nangkep interaksi dari pesan
-    LAMA yang udah keposting, bukan buat ditampilin lagi, jadi opsi
-    placeholder di situ gak masalah gak kepake."""
+    LAMA yang udah keposting, bukan buat ditampilin lagi, jadi opsi/
+    tampilan placeholder di situ gak masalah gak kepake."""
 
-    def __init__(self, ticket_types: list | None = None) -> None:
+    def __init__(
+        self,
+        ticket_types: list | None = None,
+        *,
+        title: str = "NOCTRA -- Pilih Jenis Ticket",
+        description: str = "Pilih jenis ticket yang sesuai kebutuhan kamu lewat dropdown di bawah.",
+        thumbnail_url: str | None = None,
+        banner_url: str | None = None,
+        footer_text: str | None = None,
+        footer_icon_url: str | None = None,
+        color: int = COLOR_ACCENT,
+    ) -> None:
         super().__init__(timeout=None)
         options = [
             discord.SelectOption(
@@ -1073,45 +1090,63 @@ class TicketTypeSelectView(discord.ui.View):
             )
             for t in (ticket_types or [])
         ] or [discord.SelectOption(label="Belum ada jenis ticket diatur", value="_none")]
-        self.select_ticket_type.options = options
 
-    @discord.ui.select(
-        placeholder="Pilih jenis ticket...",
-        custom_id="noctra:ticket:type_select",
-        min_values=1,
-        max_values=1,
-        options=[discord.SelectOption(label="Placeholder", value="_placeholder")],
-    )
-    async def select_ticket_type(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
-        slug = select.values[0]
-        if slug in ("_none", "_placeholder"):
-            await interaction.response.send_message(
-                embed=embeds.error_embed("Belum ada jenis ticket yang diatur staff."), ephemeral=True
+        select_item = discord.ui.Select(
+            placeholder="Pilih jenis ticket...",
+            custom_id="noctra:ticket:type_select",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+        select_item.callback = self._make_select_callback(select_item)
+
+        container = components.ticket_type_panel_container(
+            title=title,
+            description=description,
+            select_item=select_item,
+            thumbnail_url=thumbnail_url,
+            banner_url=banner_url,
+            footer_text=footer_text,
+            footer_icon_url=footer_icon_url,
+            color=color,
+        )
+        self.add_item(container)
+
+    def _make_select_callback(self, select_item: discord.ui.Select):
+        async def _callback(interaction: discord.Interaction) -> None:
+            slug = select_item.values[0]
+            if slug in ("_none", "_placeholder"):
+                await interaction.response.send_message(
+                    embed=embeds.error_embed("Belum ada jenis ticket yang diatur staff."), ephemeral=True
+                )
+                return
+
+            db = interaction.client.db  # type: ignore[attr-defined]
+            ticket_type = await ticket_types_q.get_by_slug(db, interaction.guild_id, slug)
+            if ticket_type is None or not ticket_type["enabled"]:
+                await interaction.response.send_message(
+                    embed=embeds.error_embed(
+                        "Jenis ticket ini udah gak aktif -- coba pilih yang lain atau hubungi staff."
+                    ),
+                    ephemeral=True,
+                )
+                return
+
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            channel = await ticket_actions.create_ticket_channel(
+                interaction.client, interaction.guild, interaction.user, slug
             )
-            return
-
-        db = interaction.client.db  # type: ignore[attr-defined]
-        ticket_type = await ticket_types_q.get_by_slug(db, interaction.guild_id, slug)
-        if ticket_type is None or not ticket_type["enabled"]:
-            await interaction.response.send_message(
-                embed=embeds.error_embed("Jenis ticket ini udah gak aktif -- coba pilih yang lain atau hubungi staff."),
+            await channel.send(
+                content=interaction.user.mention,
+                embed=embeds.ticket_welcome_embed(),
+                view=TicketControlView(),
+            )
+            await interaction.followup.send(
+                embed=embeds.success_embed(f"Ticket **{ticket_type['label']}** kamu udah dibuat: {channel.mention}"),
                 ephemeral=True,
             )
-            return
 
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        channel = await ticket_actions.create_ticket_channel(
-            interaction.client, interaction.guild, interaction.user, slug
-        )
-        await channel.send(
-            content=interaction.user.mention,
-            embed=embeds.ticket_welcome_embed(),
-            view=TicketControlView(),
-        )
-        await interaction.followup.send(
-            embed=embeds.success_embed(f"Ticket **{ticket_type['label']}** kamu udah dibuat: {channel.mention}"),
-            ephemeral=True,
-        )
+        return _callback
 
 
 # ============================================================================
