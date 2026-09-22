@@ -81,7 +81,7 @@ class TicketCog(commands.Cog):
 
     @ticket_group.command(
         name="panel_types",
-        description="Posting panel DROPDOWN Components V2 buat pilih jenis ticket (Customer Service, Konsultasi, dst) di channel ini.",
+        description="Posting panel dropdown Components V2 buat pilih jenis ticket di channel ini.",
     )
     @app_commands.describe(
         title="Judul panel",
