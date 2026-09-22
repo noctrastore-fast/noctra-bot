@@ -81,11 +81,15 @@ class TicketCog(commands.Cog):
 
     @ticket_group.command(
         name="panel_types",
-        description="Posting panel DROPDOWN buat pilih jenis ticket (Customer Service, Konsultasi, dst) di channel ini.",
+        description="Posting panel DROPDOWN Components V2 buat pilih jenis ticket (Customer Service, Konsultasi, dst) di channel ini.",
     )
     @app_commands.describe(
         title="Judul panel",
-        description="Isi teks panel",
+        description="Isi teks panel (sejajar thumbnail kalau diisi)",
+        thumbnail_url="Gambar kecil sejajar deskripsi (PNG/JPG/WebP, opsional)",
+        banner_url="Banner full-width di bawah dropdown (PNG/JPG/WebP, opsional)",
+        footer_text="Teks footer di paling bawah (opsional)",
+        footer_icon_url="Ikon kecil di samping teks footer (PNG/JPG/WebP, opsional)",
     )
     @staff_only()
     async def panel_types(
@@ -93,6 +97,10 @@ class TicketCog(commands.Cog):
         interaction: discord.Interaction,
         title: str = "NOCTRA -- Pilih Jenis Ticket",
         description: str = "Pilih jenis ticket yang sesuai kebutuhan kamu lewat dropdown di bawah.",
+        thumbnail_url: str | None = None,
+        banner_url: str | None = None,
+        footer_text: str | None = None,
+        footer_icon_url: str | None = None,
     ) -> None:
         types = await ticket_types_q.list_types(self.bot.db, interaction.guild_id, enabled_only=True)
         if not types:
@@ -104,8 +112,16 @@ class TicketCog(commands.Cog):
                 ephemeral=True,
             )
             return
-        embed = embeds.base_embed(title, description)
-        await interaction.channel.send(embed=embed, view=TicketTypeSelectView(types))
+        view = TicketTypeSelectView(
+            types,
+            title=title,
+            description=description,
+            thumbnail_url=thumbnail_url,
+            banner_url=banner_url,
+            footer_text=footer_text,
+            footer_icon_url=footer_icon_url,
+        )
+        await interaction.channel.send(view=view)
         await interaction.response.send_message(
             embed=embeds.success_embed("Panel dropdown jenis ticket udah diposting."), ephemeral=True
         )
