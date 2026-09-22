@@ -738,11 +738,12 @@ class TicketDeleteConfirmView(discord.ui.View):
                 embed=embeds.error_embed("Channel udah gak ada."), view=None
             )
             return
-        # Channel-nya udah ilang di titik ini, jadi gak ada lagi yang bisa
-        # di-edit -- pesan ini cuma nyampe ke interaction ephemeral staff
-        # itu sendiri, yang tetep disimpen Discord walau channel-nya udah
-        # ilang.
-        await interaction.response.edit_message(embed=embeds.success_embed("Channel udah dihapus."), view=None)
+        # Channel-nya udah ilang di titik ini -- pesan konfirmasi ini juga
+        # ikut kehapus bareng channel-nya (dia nempel DI channel yang
+        # dihapus), jadi gak bisa di-edit lagi (bakal 404 Unknown Message
+        # kalau dipaksa). Kirim response BARU (bukan edit) ke staff yang
+        # klik -- ini gak butuh pesan lamanya masih ada.
+        await interaction.response.send_message(embed=embeds.success_embed("Channel udah dihapus."), ephemeral=True)
         self.stop()
 
     @discord.ui.button(label="Batal", style=discord.ButtonStyle.secondary)
