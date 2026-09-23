@@ -121,6 +121,25 @@ class RuntimeSettings:
         di leaderboard publik. Disimpan sebagai string ID dipisah koma."""
         return await self._get_id_list("leaderboard_excluded_users")
 
+    async def leaderboard_badge_role_id(self) -> int | None:
+        """Role yang WAJIB dipunya user buat bisa atur badge custom-nya
+        sendiri lewat panel /badge channel -- diatur staff lewat
+        /badge role. Kosong = fitur badge custom dianggap belum
+        diaktifin, gak ada yang bisa atur apa-apa."""
+        value = await self._get("leaderboard_badge_role_id", None)
+        return int(value) if value else None
+
+    async def leaderboard_badge_channel_id(self) -> int | None:
+        value = await self._get("leaderboard_badge_channel_id", None)
+        return int(value) if value else None
+
+    async def leaderboard_background_url(self) -> str | None:
+        """URL gambar background leaderboard (biasanya logo/icon store) --
+        diatur staff lewat /badge background. Kosong = pake gradient
+        polos bawaan kayak sebelum fitur ini ada."""
+        value = await self._get("leaderboard_background_url", None)
+        return value or None
+
     async def purchase_feed_channel_id(self) -> int | None:
         """Channel publik tempat kartu "Si X baru aja beli Y" diposting
         tiap ada order yang ditandain selesai -- diatur lewat

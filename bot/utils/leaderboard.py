@@ -24,6 +24,11 @@ async def _fetch_bytes(session: aiohttp.ClientSession, url: str) -> bytes | None
     return None
 
 
+def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
+    h = hex_str.lstrip("#")
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
 async def refresh_leaderboard(bot) -> bool:
     db = bot.db
     runtime = RuntimeSettings(db)
@@ -47,6 +52,7 @@ async def refresh_leaderboard(bot) -> bool:
         return False
 
     entries = []
+    background_img = None
     async with aiohttp.ClientSession() as session:
         for i, row in enumerate(rows):
             display_name = f"User {row['user_id']}"
@@ -61,6 +67,23 @@ async def refresh_leaderboard(bot) -> bool:
             except Exception:
                 pass
 
+            # Badge custom CUMA berlaku buat rank 0-2 (top 3) -- dicek
+            # ulang di sini TIAP refresh, jadi kalau rank-nya turun dari
+            # top 3, badge-nya otomatis gak ke-render lagi walau row-nya
+            # masih nyangkut di DB (gak perlu dihapus manual sama user).
+            badge = None
+            if i < 3:
+                badge_row = await lb_q.get_badge(db, row["user_id"])
+                if badge_row:
+                    try:
+                        badge = {
+                            "text": badge_row["text"],
+                            "color_from": _hex_to_rgb(badge_row["color_from"]),
+                            "color_to": _hex_to_rgb(badge_row["color_to"]),
+                        }
+                    except Exception:
+                        badge = None
+
             entries.append({
                 "rank":           i,
                 "display_name":   display_name,
@@ -68,7 +91,22 @@ async def refresh_leaderboard(bot) -> bool:
                 "total_orders":   row["total_orders"],
                 "currency_label": row["currency_label"],
                 "avatar":         avatar_img,
+                "badge":          badge,
             })
+
+        # Background custom (logo/icon store, diatur staff lewat
+        # /badge background) -- opsional, None kalau belum diatur atau
+        # gagal di-fetch, generate_leaderboard_image fallback ke gradient
+        # polos bawaan.
+        bg_url = await runtime.leaderboard_background_url()
+        if bg_url:
+            bg_data = await _fetch_bytes(session, bg_url)
+            if bg_data:
+                try:
+                    from PIL import Image
+                    background_img = Image.open(BytesIO(bg_data)).convert("RGB")
+                except Exception:
+                    background_img = None
 
     ts = datetime.now(timezone.utc).strftime("Updated %d %b %Y, %H:%M UTC")
     buf = generate_leaderboard_image(
@@ -76,6 +114,7 @@ async def refresh_leaderboard(bot) -> bool:
         title="NOCTRA STORE",
         subtitle="TOP SPENDERS",
         timestamp=ts,
+        background=background_img,
     )
 
     existing_id = await lb_q.get_leaderboard_message_id(db)

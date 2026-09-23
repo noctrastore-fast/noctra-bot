@@ -30,7 +30,7 @@ import math
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 # -- Palette ------------------------------------------------------------------
 BG_TOP       = (7,   5,  16)
@@ -262,6 +262,42 @@ def _fmt(amount: float, currency: str) -> str:
     return f"{c} {s}"
 
 
+def _draw_gradient_badge(
+    img: Image.Image, cx: int, y: int, text: str, color_from: tuple, color_to: tuple, font, scale: int,
+) -> int:
+    """Gambar badge custom (teks + gradient 2 warna horizontal) di tengah
+    (cx), nempel TEPAT di bawah nama -- CUMA dipake buat podium top 1-3
+    yang punya badge kesimpen (lihat bot.database.queries.leaderboard.
+    get_badge & bot.utils.leaderboard.refresh_leaderboard). Return tinggi
+    total badge-nya (dipake caller buat geser elemen di bawahnya -- spend
+    & jumlah order -- biar gak numpuk sama badge)."""
+    draw = ImageDraw.Draw(img)
+    tw_ = int(draw.textlength(text, font=font))
+    pad_x = 16 * scale
+    pad_y = 7 * scale
+    badge_w = max(tw_ + pad_x * 2, 40 * scale)
+    badge_h = _text_h(draw, font) + pad_y * 2
+    x0 = cx - badge_w // 2
+
+    grad = Image.new("RGB", (badge_w, badge_h))
+    gd = ImageDraw.Draw(grad)
+    for gx in range(badge_w):
+        t = gx / max(1, badge_w - 1)
+        r = int(color_from[0] * (1 - t) + color_to[0] * t)
+        g = int(color_from[1] * (1 - t) + color_to[1] * t)
+        b = int(color_from[2] * (1 - t) + color_to[2] * t)
+        gd.line([(gx, 0), (gx, badge_h)], fill=(r, g, b))
+    mask = Image.new("L", (badge_w, badge_h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, badge_w - 1, badge_h - 1], radius=badge_h // 2, fill=255)
+    img.paste(grad, (x0, y), mask)
+
+    bbox = draw.textbbox((0, 0), text, font=font)
+    th = bbox[3] - bbox[1]
+    draw = ImageDraw.Draw(img)
+    draw.text((cx - tw_ // 2, y + (badge_h - th) // 2 - bbox[1]), text, font=font, fill=WHITE)
+    return badge_h
+
+
 def _podium_card(
     img: Image.Image, entry: dict, rank: int, x0: int, x1: int, top_y: int, bottom_y: int,
     avatar_d: int, max_spend: float,
@@ -300,9 +336,26 @@ def _podium_card(
     nw = _tw(draw, name, f_name)
     draw.text((cx - nw // 2, name_y), name, font=f_name, fill=WHITE)
 
+    # Kursor vertikal buat elemen SETELAH nama -- defaultnya sama persis
+    # kayak posisi spend_y lama (name_y + tinggi nama + 10*S) kalau gak
+    # ada badge custom, jadi tata letak buat user TANPA badge gak berubah
+    # sama sekali. Badge custom (kalau ada) digambar di sini duluan, terus
+    # kursornya digeser ke bawah badge-nya.
+    cursor_y = name_y + _text_h(draw, f_name) + 10 * S
+
+    custom_badge = entry.get("badge")
+    if custom_badge:
+        badge_font = _f(_BOLD, 16 * S if rank == 0 else 14 * S)
+        badge_h = _draw_gradient_badge(
+            img, cx, cursor_y, custom_badge["text"][:24],
+            custom_badge["color_from"], custom_badge["color_to"], badge_font, S,
+        )
+        draw = ImageDraw.Draw(img)
+        cursor_y += badge_h + 10 * S
+
     spend = entry.get("total_spent", 0)
     spend_s = _fmt(spend, entry.get("currency_label", "IDR"))
-    spend_y = name_y + _text_h(draw, f_name) + 10 * S
+    spend_y = cursor_y
     sw = _tw(draw, spend_s, f_amount)
     draw.text((cx - sw // 2, spend_y), spend_s, font=f_amount, fill=CRIMSON_SOFT if rank == 0 else WHITE)
 
@@ -329,6 +382,7 @@ def generate_leaderboard_image(
     title: str = "NOCTRA STORE",
     subtitle: str = "TOP SPENDERS",
     timestamp: str = "",
+    background: Image.Image | None = None,
 ) -> BytesIO:
     S = SS
     img_w = IMG_W * S
@@ -359,8 +413,20 @@ def generate_leaderboard_image(
     h = header_h + podium_section_h + (podium_to_list_gap if (has_podium and list_n) else 0) + list_section_h + bottom
     h = max(h, header_h + bottom + 200 * S)
 
-    img = _gradient(img_w, h, BG_TOP, BG_BOT)
-    img = img.convert("RGBA")
+    if background is not None:
+        # Background custom (biasanya logo/icon store, diatur staff lewat
+        # /badge background) di-crop "cover" biar ngisi penuh kanvas tanpa
+        # gepeng, terus dikasih gradient gelap semi-transparan DI ATASnya
+        # -- tanpa ini, background yang terang bisa bikin nama/angka susah
+        # kebaca. Tekstur/glow/dst tetep numpuk di atas kombinasi ini,
+        # gak berubah sama sekali.
+        img = ImageOps.fit(background.convert("RGB"), (img_w, h), Image.LANCZOS).convert("RGBA")
+        dark_overlay = _gradient(img_w, h, BG_TOP, BG_BOT).convert("RGBA")
+        dark_overlay.putalpha(190)
+        img.alpha_composite(dark_overlay)
+    else:
+        img = _gradient(img_w, h, BG_TOP, BG_BOT)
+        img = img.convert("RGBA")
     img.alpha_composite(_diagonal_texture(img_w, h))
     if has_podium:
         podium_cy = header_h + podium_section_h // 2
