@@ -583,11 +583,26 @@ def ticket_type_panel_container(
 
 # -- Panel Atur Badge Leaderboard ---------------------------------------------
 
-def badge_panel_container(title: str, description: str) -> discord.ui.Container:
-    """Isi panel /badge panel -- pola SAMA PERSIS kayak card_panel_container
-    di atas: title+description doang, tombol Atur/Hapus Badge ditempel
-    caller (bot.ui.views.BadgePanelView)."""
-    return discord.ui.Container(
-        discord.ui.TextDisplay(f"## {title}\n{description}"),
-        accent_colour=COLOR_PRIMARY,
+def badge_panel_container(
+    title: str,
+    description: str,
+    thumbnail_url: str | None = None,
+    banner_url: str | None = None,
+) -> discord.ui.Container:
+    """Isi panel /badge panel -- sekarang bisa dikasih thumbnail (nempel di
+    samping judul, kayak shop_panel_container) dan banner (gambar
+    full-width di bawah teks, kayak ticket_type_panel_container) opsional.
+    Tombol Atur/Hapus Badge tetep ditempel caller (bot.ui.views.BadgePanelView)."""
+    header_text = discord.ui.TextDisplay(f"## {title}\n{description}")
+    header = (
+        discord.ui.Section(header_text, accessory=discord.ui.Thumbnail(media=thumbnail_url))
+        if thumbnail_url
+        else header_text
     )
+
+    children: list = [header]
+    if banner_url:
+        children.append(discord.ui.Separator(visible=True, spacing=discord.SeparatorSpacing.small))
+        children.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner_url)))
+
+    return discord.ui.Container(*children, accent_colour=COLOR_PRIMARY)
