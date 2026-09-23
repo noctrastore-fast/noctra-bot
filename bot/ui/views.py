@@ -1848,9 +1848,16 @@ class BadgePanelView(discord.ui.LayoutView):
     badge custom leaderboard, pola sama kayak TicketTypeSelectView:
     container dari components.py + ActionRow tombol ditempel di sini.
     Persistent: custom_id tombolnya tetap ("noctra:badge:set" /
-    "noctra:badge:clear"), tampilan panel (judul/deskripsi) ke-simpen di
-    pesan Discord itu sendiri (server-side), jadi tetep sama abis bot
-    restart."""
+    "noctra:badge:clear"), tampilan panel (judul/deskripsi/thumbnail/
+    banner/emoji tombol) ke-simpen di pesan Discord itu sendiri
+    (server-side), jadi tetep sama abis bot restart -- gak kepengaruh sama
+    args default di sini, yang cuma dipake pas /badge panel gak ngisi
+    parameter opsionalnya.
+
+    emoji_set/emoji_clear nerima string apa aja yang diterima
+    discord.PartialEmoji.from_str: unicode biasa ATAU emoji custom server
+    (format <:nama:id> / <a:nama:id>) -- caller (bot.cogs.badge) yang
+    validasi format-nya sebelum bikin view ini."""
 
     def __init__(
         self,
@@ -1860,18 +1867,22 @@ class BadgePanelView(discord.ui.LayoutView):
             "Kamu lagi di TOP 3 Top Spenders? Atur badge custom kamu sendiri di sini -- "
             "teks bebas + 2 warna gradient pilihan kamu, bakal tampil di bawah nama kamu di leaderboard."
         ),
+        thumbnail_url: str | None = None,
+        banner_url: str | None = None,
+        emoji_set: str | discord.PartialEmoji = "\U0001F3F7",
+        emoji_clear: str | discord.PartialEmoji = "\U0001F5D1",
     ) -> None:
         super().__init__(timeout=None)
-        container = components.badge_panel_container(title, description)
+        container = components.badge_panel_container(title, description, thumbnail_url, banner_url)
 
         set_button = discord.ui.Button(
             label="Atur Badge", style=discord.ButtonStyle.primary,
-            custom_id="noctra:badge:set", emoji="\U0001F3F7",
+            custom_id="noctra:badge:set", emoji=emoji_set,
         )
         set_button.callback = self._set_badge_callback
         clear_button = discord.ui.Button(
             label="Hapus Badge", style=discord.ButtonStyle.secondary,
-            custom_id="noctra:badge:clear", emoji="\U0001F5D1",
+            custom_id="noctra:badge:clear", emoji=emoji_clear,
         )
         clear_button.callback = self._clear_badge_callback
 
