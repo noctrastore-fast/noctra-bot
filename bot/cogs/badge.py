@@ -25,6 +25,25 @@ from bot.ui.views import BadgePanelView
 from bot.utils.permissions import staff_only
 
 
+def _parse_custom_emoji(value: str | None) -> discord.PartialEmoji | None:
+    """Validasi emoji buat tombol panel -- terima emoji custom SERVER MANA
+    PUN (format <:nama:id> / <a:nama:id>, didapet dari ngetik `\\:nama:` di
+    chat Discord lalu di-copy hasilnya) ATAU emoji unicode biasa. Return
+    None kalau kosong (caller pake default bawaan "\U0001F3F7"/
+    "\U0001F5D1"). Raise ValueError kalau formatnya gak kebaca sama sekali,
+    biar caller bisa kasih tau staff format yang bener."""
+    if not value or not value.strip():
+        return None
+    value = value.strip()
+    try:
+        return discord.PartialEmoji.from_str(value)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(
+            f"Format emoji `{value}` gak kebaca. Pake emoji unicode biasa, atau emoji custom "
+            "server (ketik `\\:namaemoji:` di chat dulu buat dapet kode aslinya, terus tempel di sini)."
+        ) from exc
+
+
 class BadgeCog(commands.Cog):
     """Atur badge custom leaderboard & background-nya."""
 
@@ -80,7 +99,14 @@ class BadgeCog(commands.Cog):
         )
 
     @badge_group.command(name="panel", description="Posting panel atur badge leaderboard di channel ini.")
-    @app_commands.describe(title="Judul panel", description="Isi teks panel")
+    @app_commands.describe(
+        title="Judul panel",
+        description="Isi teks panel",
+        thumbnail="Gambar kecil di samping judul (opsional)",
+        banner="Gambar full-width di bawah teks (opsional)",
+        emoji_atur="Emoji tombol Atur Badge -- boleh emoji custom server (opsional)",
+        emoji_hapus="Emoji tombol Hapus Badge -- boleh emoji custom server (opsional)",
+    )
     @staff_only()
     async def panel(
         self,
@@ -89,8 +115,38 @@ class BadgeCog(commands.Cog):
         description: str = (
             "Kamu lagi di TOP 3 Top Spenders? Atur badge custom kamu sendiri di sini."
         ),
+        thumbnail: discord.Attachment | None = None,
+        banner: discord.Attachment | None = None,
+        emoji_atur: str | None = None,
+        emoji_hapus: str | None = None,
     ) -> None:
-        await interaction.channel.send(view=BadgePanelView(title=title, description=description))
+        for attachment, label in ((thumbnail, "Thumbnail"), (banner, "Banner")):
+            if attachment is not None and (
+                not attachment.content_type or not attachment.content_type.startswith("image/")
+            ):
+                await interaction.response.send_message(
+                    embed=embeds.error_embed(f"{label} harus berupa gambar."), ephemeral=True
+                )
+                return
+
+        try:
+            parsed_emoji_atur = _parse_custom_emoji(emoji_atur)
+            parsed_emoji_hapus = _parse_custom_emoji(emoji_hapus)
+        except ValueError as exc:
+            await interaction.response.send_message(embed=embeds.error_embed(str(exc)), ephemeral=True)
+            return
+
+        view_kwargs: dict = {"title": title, "description": description}
+        if thumbnail is not None:
+            view_kwargs["thumbnail_url"] = thumbnail.url
+        if banner is not None:
+            view_kwargs["banner_url"] = banner.url
+        if parsed_emoji_atur is not None:
+            view_kwargs["emoji_set"] = parsed_emoji_atur
+        if parsed_emoji_hapus is not None:
+            view_kwargs["emoji_clear"] = parsed_emoji_hapus
+
+        await interaction.channel.send(view=BadgePanelView(**view_kwargs))
         await interaction.response.send_message(
             embed=embeds.success_embed("Panel badge udah diposting."), ephemeral=True
         )
