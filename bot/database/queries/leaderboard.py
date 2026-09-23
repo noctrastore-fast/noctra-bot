@@ -1,3 +1,10 @@
+"""Queries buat badge custom leaderboard (Top Spenders)."""
+
+from __future__ import annotations
+
+from bot.database.core import Database
+
+
 async def get_badge(db: Database, user_id: int):
     return await db.fetchone("SELECT * FROM leaderboard_badges WHERE user_id = ?", (user_id,))
 
