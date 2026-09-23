@@ -579,3 +579,15 @@ def ticket_type_panel_container(
             children.append(footer_display)
 
     return discord.ui.Container(*children, accent_colour=color)
+
+
+# -- Panel Atur Badge Leaderboard ---------------------------------------------
+
+def badge_panel_container(title: str, description: str) -> discord.ui.Container:
+    """Isi panel /badge panel -- pola SAMA PERSIS kayak card_panel_container
+    di atas: title+description doang, tombol Atur/Hapus Badge ditempel
+    caller (bot.ui.views.BadgePanelView)."""
+    return discord.ui.Container(
+        discord.ui.TextDisplay(f"## {title}\n{description}"),
+        accent_colour=COLOR_PRIMARY,
+    )

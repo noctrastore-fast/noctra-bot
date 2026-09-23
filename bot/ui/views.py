@@ -44,13 +44,14 @@ from bot.database.queries import (
 )
 from bot.database.queries import cards as cards_q
 from bot.database.queries import giveaways as giveaways_q
+from bot.database.queries import leaderboard as lb_q
 from bot.database.queries import ticket_types as ticket_types_q
 from bot.ui import components, embeds
 from bot.ui.modals import MessageModal, ReasonModal, ReviewTextModal, collect_dynamic_fields
 from bot.utils import card_actions, order_actions, ticket_actions
 from bot.utils.helpers import RuntimeSettings, calculate_final_price, format_price
 from bot.utils.permissions import is_staff
-from bot.utils.validators import FieldValidationError, validate_field_value
+from bot.utils.validators import FieldValidationError, parse_hex_color, validate_field_value
 
 MAX_SELECT_OPTIONS = 25
 
@@ -1762,3 +1763,168 @@ class GiveawayView(discord.ui.LayoutView):
         super().__init__(timeout=None)
         container.add_item(discord.ui.ActionRow(join_button))
         self.add_item(container)
+
+
+# ============================================================================
+# BADGE CUSTOM LEADERBOARD -- CUMA buat top 1-3 Top Spenders. Panel di
+# channel khusus (/badge channel), gerbang izin (role dari /badge role +
+# beneran lagi top-3 SEKARANG) dicek di dalam callback tombol, bukan pas
+# panel diposting -- soalnya siapa yang top-3 berubah terus tiap ada order
+# baru. Badge-nya sendiri digambar LANGSUNG ke PNG leaderboard (lihat
+# bot.utils.leaderboard_image), bukan komponen Discord.
+# ============================================================================
+
+class BadgeSetModal(discord.ui.Modal, title="Atur Badge Leaderboard"):
+    """Teks bebas + 2 kode warna hex buat gradient. Gerbang izin (role +
+    top-3) udah dicek DI LUAR sebelum modal ini dibuka (lihat
+    BadgePanelView._check_eligible), jadi di sini fokus validasi FORMAT
+    input doang."""
+
+    def __init__(self) -> None:
+        super().__init__(timeout=300)
+        self.text_input = discord.ui.TextInput(
+            label="Teks Badge",
+            style=discord.TextStyle.short,
+            max_length=24,
+            placeholder="misal: SULTAN NOCTRA",
+        )
+        self.color_from_input = discord.ui.TextInput(
+            label="Warna Awal (hex)",
+            style=discord.TextStyle.short,
+            max_length=7,
+            placeholder="#FF5F6D",
+        )
+        self.color_to_input = discord.ui.TextInput(
+            label="Warna Akhir (hex)",
+            style=discord.TextStyle.short,
+            max_length=7,
+            placeholder="#FFC371",
+        )
+        self.add_item(self.text_input)
+        self.add_item(self.color_from_input)
+        self.add_item(self.color_to_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        text = self.text_input.value.strip()
+        if not text:
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Teks badge gak boleh kosong."), ephemeral=True
+            )
+            return
+
+        color_from, error_from = parse_hex_color(self.color_from_input.value, COLOR_ACCENT)
+        if error_from:
+            await interaction.response.send_message(
+                embed=embeds.error_embed(f"Warna awal: {error_from}"), ephemeral=True
+            )
+            return
+        color_to, error_to = parse_hex_color(self.color_to_input.value, COLOR_ACCENT)
+        if error_to:
+            await interaction.response.send_message(
+                embed=embeds.error_embed(f"Warna akhir: {error_to}"), ephemeral=True
+            )
+            return
+
+        db = interaction.client.db  # type: ignore[attr-defined]
+        await lb_q.set_badge(
+            db, interaction.user.id, text, f"#{color_from:06X}", f"#{color_to:06X}",
+        )
+        await interaction.response.send_message(
+            embed=embeds.success_embed(
+                "Badge kamu berhasil disimpen! Leaderboard bakal ke-update sekarang."
+            ),
+            ephemeral=True,
+        )
+
+        # Import ditunda: ngindarin circular import (leaderboard.py bisa
+        # aja balik nyentuh module lain yang ujung-ujungnya nyentuh views
+        # ini). Fire-and-forget, sama pola kayak order_actions.
+        from bot.utils.leaderboard import refresh_leaderboard
+        await refresh_leaderboard(interaction.client)
+
+
+class BadgePanelView(discord.ui.LayoutView):
+    """Panel Components V2 di channel /badge channel -- tombol Atur/Hapus
+    badge custom leaderboard, pola sama kayak TicketTypeSelectView:
+    container dari components.py + ActionRow tombol ditempel di sini.
+    Persistent: custom_id tombolnya tetap ("noctra:badge:set" /
+    "noctra:badge:clear"), tampilan panel (judul/deskripsi) ke-simpen di
+    pesan Discord itu sendiri (server-side), jadi tetep sama abis bot
+    restart."""
+
+    def __init__(
+        self,
+        *,
+        title: str = "Atur Badge Leaderboard",
+        description: str = (
+            "Kamu lagi di TOP 3 Top Spenders? Atur badge custom kamu sendiri di sini -- "
+            "teks bebas + 2 warna gradient pilihan kamu, bakal tampil di bawah nama kamu di leaderboard."
+        ),
+    ) -> None:
+        super().__init__(timeout=None)
+        container = components.badge_panel_container(title, description)
+
+        set_button = discord.ui.Button(
+            label="Atur Badge", style=discord.ButtonStyle.primary,
+            custom_id="noctra:badge:set", emoji="\U0001F3F7",
+        )
+        set_button.callback = self._set_badge_callback
+        clear_button = discord.ui.Button(
+            label="Hapus Badge", style=discord.ButtonStyle.secondary,
+            custom_id="noctra:badge:clear", emoji="\U0001F5D1",
+        )
+        clear_button.callback = self._clear_badge_callback
+
+        container.add_item(discord.ui.ActionRow(set_button, clear_button))
+        self.add_item(container)
+
+    async def _check_eligible(self, interaction: discord.Interaction) -> bool:
+        db = interaction.client.db  # type: ignore[attr-defined]
+        runtime = RuntimeSettings(db)
+
+        role_id = await runtime.leaderboard_badge_role_id()
+        if not role_id:
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Fitur badge custom belum diaktifin staff."), ephemeral=True
+            )
+            return False
+
+        member = interaction.user if isinstance(interaction.user, discord.Member) else None
+        if member is None or not any(r.id == role_id for r in member.roles):
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Kamu belum punya role yang dibutuhin buat atur badge ini."),
+                ephemeral=True,
+            )
+            return False
+
+        excluded = await runtime.leaderboard_excluded_user_ids()
+        top3 = await lb_q.get_top_spenders(db, limit=3, excluded_user_ids=excluded)
+        if not any(row["user_id"] == interaction.user.id for row in top3):
+            await interaction.response.send_message(
+                embed=embeds.error_embed(
+                    "Badge custom cuma bisa diatur sama yang lagi di TOP 3 Top Spenders sekarang."
+                ),
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    async def _set_badge_callback(self, interaction: discord.Interaction) -> None:
+        if not await self._check_eligible(interaction):
+            return
+        await interaction.response.send_modal(BadgeSetModal())
+
+    async def _clear_badge_callback(self, interaction: discord.Interaction) -> None:
+        if not await self._check_eligible(interaction):
+            return
+        db = interaction.client.db  # type: ignore[attr-defined]
+        deleted = await lb_q.delete_badge(db, interaction.user.id)
+        if not deleted:
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Kamu belum punya badge yang keset."), ephemeral=True
+            )
+            return
+        await interaction.response.send_message(embed=embeds.success_embed("Badge kamu udah dihapus."), ephemeral=True)
+
+        from bot.utils.leaderboard import refresh_leaderboard
+        await refresh_leaderboard(interaction.client)
