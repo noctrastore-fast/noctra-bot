@@ -289,3 +289,19 @@ CREATE TABLE IF NOT EXISTS ticket_types (
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(guild_id, slug)
 );
+
+-- Badge custom leaderboard Top Spenders -- teks bebas + gradient 2 warna
+-- yang user atur sendiri lewat panel /badge (CUMA berlaku buat top 1-3,
+-- dicek ulang tiap refresh -- lihat bot.cogs.badge & bot.ui.views.
+-- BadgePanelView), digambar langsung ke PNG leaderboard
+-- (bot.utils.leaderboard_image), bukan komponen Discord.
+-- UNIQUE(user_id) -- satu user cuma bisa punya satu badge aktif, set_badge
+-- (bot.database.queries.leaderboard) pake ON CONFLICT(user_id) DO UPDATE.
+CREATE TABLE IF NOT EXISTS leaderboard_badges (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL UNIQUE,
+    text        TEXT NOT NULL,
+    color_from  TEXT NOT NULL,
+    color_to    TEXT NOT NULL,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
